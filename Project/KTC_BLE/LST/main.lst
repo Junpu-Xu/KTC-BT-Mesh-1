@@ -1,0 +1,405 @@
+C51 COMPILER V9.00   MAIN                                                                  12/19/2018 17:13:48 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Output\main.obj
+COMPILER INVOKED BY: D:\program files\Keil\C51\BIN\C51.EXE Source\main.c OPTIMIZE(8,SPEED) BROWSE INCDIR(..\..\Include) 
+                    -DEFINE(FOSC_160000) DEBUG OBJECTEXTEND PRINT(.\LST\main.lst) TABS(2) OBJECT(.\Output\main.obj)
+
+line level    source
+
+   1          /*--------------------------------------------------------------------------------------------------------
+             --
+   2          IDE information
+   3          
+   4          IDE-Version:
+   5          uVision V5.23.0.0
+   6          Copyright (C) 2017 ARM Ltd and ARM Germany GmbH. All rights reserved.
+   7          
+   8          License Information:
+   9          Junpu Xu
+  10          EasyRD
+  11          LIC=D0MII-T15AM-B0TNC-7EV6U-BMK3S-W19YC
+  12          
+  13          Tool Version Numbers:
+  14          Toolchain:        PK51 Prof. Developers Kit  Version: 9.00
+  15          Toolchain Path:    D:\program files\Keil\C51\BIN
+  16          C Compiler:         C51.exe    V9.00
+  17          Assembler:          A51.exe    V8.01
+  18          Linker/Locator:     BL51.exe    V6.22
+  19          Librarian:             LIB51.exe    V4.24
+  20          Hex Converter:      OH51.exe    V2.6
+  21          CPU DLL:               S8051.DLL            V3.72
+  22          Dialog DLL:         DP51.DLL             V2.59
+  23          Target DLL:             Nuvoton_8051_Keil_uVision_Driver.dll      V1.09
+  24          Dialog DLL:         TP51.DLL             V2.58
+  25          --------------------------------------------------------------------------------*/
+  26          
+  27          
+  28          /*----------------------------------Software version record -------------------------------------
+  29          v0.0.0  2018_03_21
+  30          v0.0.1,2018_12_14
+  31            -- MCU can talk with BT module (Mesh function of BT module not yet tested)
+  32          
+  33          v0.0.2,2018_12_17
+  34            -- Two nodes mesh network built-up
+  35          
+  36          ----------------------------------------------------------------------------------------------------------
+             ---*/
+  37          //********************************************************************************************************
+             -***
+  38          
+  39          //********************************************************************************************************
+             -***
+  40          // 
+  41          //********************************************************************************************************
+             -***
+  42          #include "N76E003.h"
+  43          #include "SFR_Macro.h"
+  44          #include "Common.h"
+  45          #include "Delay.h"
+  46          #include "string.h"
+  47          #include "Function_define.h"
+  48          
+  49          #define BUFFER_SIZE   16
+C51 COMPILER V9.00   MAIN                                                                  12/19/2018 17:13:48 PAGE 2   
+
+  50          UINT8  UART_BUFFER[BUFFER_SIZE],temp;
+  51          UINT16 u16_CNT=0,u16_CNT1=0;
+  52          bit riflag;
+  53          
+  54          #define TxBufferSize  50
+  55          #define RxBufferSize  50
+  56          
+  57          struct Mesh_Data_Send
+  58          {
+  59            UINT16  Instruction;
+  60            UINT16  Target_Short_Address;
+  61            UINT8 DATA[10];
+  62            //UINT8 DATA[10] = {1,2,3,4,5,6,7,8,9,0x0A};
+  63          } Mesh_Data_Send_1;
+  64          
+  65          #define Instruction_Send  0xAAFB
+  66          #define Address_Broadcast 0xFFFF
+  67          
+  68          UINT8 xdata TxBuffer[TxBufferSize]; 
+  69          UINT8 xdata RxBuffer[RxBufferSize];
+  70          volatile UINT8 RxBuffer_read_counter = 0x00;
+  71          volatile UINT8 RxBuffer_write_counter = 0x00;
+  72          volatile UINT8 TxBuffer_read_counter = 0x00;
+  73          volatile UINT8 TxBuffer_write_counter = 0x00;
+  74          
+  75          void v_init();
+  76          void v_Load_Mesh_Send_Data(UINT16 Instruction,UINT16 Address,UINT8 Data[]);
+  77          
+  78          /**
+  79           * FUNCTION_PURPOSE: serial interrupt, echo received data.
+  80           * FUNCTION_INPUTS: P0.7(RXD) serial input
+  81           * FUNCTION_OUTPUTS: P0.6(TXD) serial output
+  82           */
+  83          void SerialPort0_ISR(void) interrupt 4 
+  84          {
+  85   1        if (RI==1)
+  86   1        {                                       /* if reception occur */
+  87   2          clr_RI;                             /* clear reception flag for next reception */
+  88   2          RxBuffer[RxBuffer_write_counter] = SBUF;
+  89   2          
+  90   2          //SBUF = RxBuffer[RxBuffer_write_counter];
+  91   2          
+  92   2          RxBuffer_write_counter ++;
+  93   2          if(RxBuffer_write_counter >= RxBufferSize)
+  94   2          {
+  95   3            RxBuffer_write_counter = 0;
+  96   3          }
+  97   2      
+  98   2          riflag =1;
+  99   2          
+ 100   2          
+ 101   2          }
+ 102   1          if(TI==1)
+ 103   1        {
+ 104   2          clr_TI;                             /* if emission occur */
+ 105   2          if(TxBuffer_read_counter != TxBuffer_write_counter)
+ 106   2          {
+ 107   3            SBUF = TxBuffer[TxBuffer_read_counter];
+ 108   3            TxBuffer_read_counter ++;
+ 109   3            if(TxBuffer_read_counter >= TxBufferSize)
+ 110   3            {
+ 111   4              TxBuffer_read_counter = 0;
+C51 COMPILER V9.00   MAIN                                                                  12/19/2018 17:13:48 PAGE 3   
+
+ 112   4            }
+ 113   3          } 
+ 114   2        }
+ 115   1      }
+ 116          
+ 117          char putchar (char c)
+ 118          {
+ 119   1      //    while (!TI_1);  /* wait until transmitter ready */
+ 120   1        TxBuffer[TxBuffer_write_counter] = c;
+ 121   1        TxBuffer_write_counter ++;
+ 122   1        if(TxBuffer_write_counter >= TxBufferSize)
+ 123   1        {
+ 124   2          TxBuffer_write_counter = 0;
+ 125   2        }
+ 126   1          
+ 127   1          //SBUF = c;      /* output character */
+ 128   1          return (c);
+ 129   1      }
+ 130          
+ 131          void v_Load_Mesh_Send_Data(UINT16 Instruction,UINT16 Address,UINT8 Data[])
+ 132          {
+ 133   1        UINT8 temp_Mesh_Send_Data,i_Mesh_Send_Data;
+ 134   1      
+ 135   1        //load instruction
+ 136   1        temp_Mesh_Send_Data = (Instruction >> 8) & 0xFF;
+ 137   1        putchar(temp_Mesh_Send_Data); 
+ 138   1        temp_Mesh_Send_Data = Instruction & 0xFF;
+ 139   1        putchar(temp_Mesh_Send_Data);
+ 140   1        
+ 141   1        //load address
+ 142   1        temp_Mesh_Send_Data = (Address >> 8) & 0xFF;
+ 143   1        putchar(temp_Mesh_Send_Data); 
+ 144   1        temp_Mesh_Send_Data = Address & 0xFF;
+ 145   1        putchar(temp_Mesh_Send_Data); 
+ 146   1        
+ 147   1        //load data
+ 148   1        //10 bytes data
+ 149   1        for(i_Mesh_Send_Data = 0;i_Mesh_Send_Data < 10; i_Mesh_Send_Data++)
+ 150   1        {
+ 151   2          putchar(Data[i_Mesh_Send_Data]);
+ 152   2        }
+ 153   1        
+ 154   1        
+ 155   1      }
+ 156          
+ 157          //v_init() function
+ 158          void v_init()
+ 159          { 
+ 160   1        set_CLOEN;  //Clock Output Enable
+ 161   1        
+ 162   1        /*BT module PWRC pin configuration
+ 163   1          Connect state:
+ 164   1              --PWRC = 1:Transparent transmission
+ 165   1              --PWRC = 0:AT instruction/Querry. 
+ 166   1                        In this sate, BT device (MP for instance) can still send data via BT module to MCU, 
+ 167   1                        but BT does not forward data from MCU to MP(BT device)
+ 168   1          Unconnect state:
+ 169   1              --PWRC = 1:AT instruction/Querry
+ 170   1              --PWRC = 0:AT instruction/Querry  
+ 171   1        */
+ 172   1        P14_PushPull_Mode;    //P14 for BT's PWRC pin
+ 173   1        
+C51 COMPILER V9.00   MAIN                                                                  12/19/2018 17:13:48 PAGE 4   
+
+ 174   1          P12_PushPull_Mode;
+ 175   1      
+ 176   1          
+ 177   1      
+ 178   1        InitialUART0_Timer3(115200);
+ 179   1      
+ 180   1        
+ 181   1      
+ 182   1      
+ 183   1      
+ 184   1          
+ 185   1          set_RB8;          //This bit is for setting the stop bit 2 high/low status,  */
+ 186   1          clr_TI; 
+ 187   1          set_ES;           //enable UART interrupt
+ 188   1          set_EA;           //enable global interrupt
+ 189   1      }
+ 190          
+ 191          /*********************************************************************************************************
+             -***
+ 192          *    Main function 
+ 193          **********************************************************************************************************
+             -**/
+ 194          void main (void)
+ 195          {
+ 196   1        UINT8 i;
+ 197   1        UINT8 Data_Test[16] = {"FUCK56789A"};
+ 198   1        //char *Data_Test1[16];
+ 199   1        
+ 200   1        
+ 201   1        v_init();
+ 202   1      
+ 203   1          while(1)
+ 204   1          {
+ 205   2            if (riflag)
+ 206   2            {
+ 207   3              P12 = ~P12;   //In debug mode check UART_BUFFER[u16_CNT] to check receive data
+ 208   3              riflag = 0;
+ 209   3            }
+ 210   2            
+ 211   2            //Send_Data_To_UART0(0x55);
+ 212   2            //putchar(0x55);
+ 213   2            
+ 214   2            
+ 215   2            //printf("\n temp= 0x%bX",0x55);
+ 216   2            
+ 217   2            //Querry Version number
+ 218   2            //Response:JDY-10M-Y2.2-MESH
+ 219   2            //printf("AT+VER\r\n");
+ 220   2            
+ 221   2            //Querry MAC address
+ 222   2            //Response:+MAC:<mac address>
+ 223   2            //printf("AT+MAC\r\n");
+ 224   2          
+ 225   2      
+ 226   2            //SET BT address
+ 227   2            //Response:+OK
+ 228   2      /*      printf("AT+NAMEKTC-BT-MESH-1\r\n"); 
+ 229   2            TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 230   2            Timer0_Delay1ms(200); 
+ 231   2            Timer0_Delay1ms(2);  */     
+ 232   2      
+ 233   2            
+C51 COMPILER V9.00   MAIN                                                                  12/19/2018 17:13:48 PAGE 5   
+
+ 234   2      
+ 235   2            //Querry BT address
+ 236   2            //Response:+NAME=<BT name>
+ 237   2      /*      printf("AT+NAME\r\n");
+ 238   2            TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 239   2            Timer0_Delay1ms(200); 
+ 240   2            Timer0_Delay1ms(2);    */ 
+ 241   2            
+ 242   2            //Querry BAUD rate
+ 243   2            //Response:+BAUD=<0--115200>
+ 244   2            //printf("AT+BAUD\r\n");  
+ 245   2      
+ 246   2            //Set device type
+ 247   2            //Response:+ok
+ 248   2            /*
+ 249   2                A0:Transparent transmission mode
+ 250   2                B1:LED light mode
+ 251   2                C0:Low power consumption telecontroller     
+ 252   2            */
+ 253   2            //printf("AT+CLSSA0\r\n");
+ 254   2              
+ 255   2      
+ 256   2            //clr_P14;
+ 257   2            set_P14;
+ 258   2      
+ 259   2            //Querry device type
+ 260   2            //Response:+CLSS=<A0--Transparent transmission mode>
+ 261   2            //printf("AT+CLSS\r\n");
+ 262   2            
+ 263   2            //SET mesh network ID 
+ 264   2            //(ID has to be exactly 12 characters, if not enough, fill in with space)
+ 265   2            //(ID has to be data within 0-9,A,B,C,D,E,F)
+ 266   2            //Response:+OK
+ 267   2            //printf("AT+NETID0123456BCDEF\r\n"); 
+ 268   2            //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 269   2            //Timer0_Delay1ms(200); 
+ 270   2            //Timer0_Delay1ms(2);       
+ 271   2            
+ 272   2          
+ 273   2      
+ 274   2            //Querry mesh network ID
+ 275   2            //Response:+NETID=<netID>
+ 276   2            //printf("AT+NETID\r\n");   
+ 277   2            //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 278   2            //Timer0_Delay1ms(200); 
+ 279   2            //Timer0_Delay1ms(2);     
+ 280   2      
+ 281   2            //SET mesh network short address
+ 282   2            //(short address has to be exactly 2 characters, if not enough, fill in with space)
+ 283   2            //(short address has to be data within 0-9,A,B,C,D,E,F)
+ 284   2            //Response:+OK
+ 285   2            //printf("AT+MADDR55\r\n"); 
+ 286   2            //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 287   2            //Timer0_Delay1ms(200); 
+ 288   2            //Timer0_Delay1ms(2);       
+ 289   2            
+ 290   2      
+ 291   2            //Querry mesh network short address
+ 292   2            //Response:+MADDR=<short address>
+ 293   2            //printf("AT+MADDR\r\n"); 
+ 294   2            //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 295   2            //Timer0_Delay1ms(200); 
+C51 COMPILER V9.00   MAIN                                                                  12/19/2018 17:13:48 PAGE 6   
+
+ 296   2            //Timer0_Delay1ms(2);     
+ 297   2            
+ 298   2            //SET APP connection passcode
+ 299   2            //(APP connection passcode has to be exactly 4 characters, if not enough, fill in with space)
+ 300   2            //(APP connection passcode can be any asCII code)
+ 301   2            //Response:+OK
+ 302   2      /*      printf("AT+PSS8HAB\r\n");         
+ 303   2            TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 304   2            Timer0_Delay1ms(200); 
+ 305   2            Timer0_Delay1ms(2);    */ 
+ 306   2      
+ 307   2            //Querry APP connection passcode
+ 308   2            //Response:+PSS=<passcode>
+ 309   2      /*      printf("AT+PSS\r\n");
+ 310   2            TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 311   2            Timer0_Delay1ms(200); 
+ 312   2            Timer0_Delay1ms(2); */        
+ 313   2      
+ 314   2            //SET APP passcode connection switch
+ 315   2            //ISCEN0 -- APP dosn't require a passcode
+ 316   2            //ISCEN1 -- open APP passcode switch
+ 317   2            //Response:+OK
+ 318   2      /*      printf("AT+ISCEN0\r\n");  
+ 319   2            TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 320   2            Timer0_Delay1ms(200); 
+ 321   2            Timer0_Delay1ms(2);       
+ 322   2             */
+ 323   2          
+ 324   2      
+ 325   2            //Querry APP passcode connection switch
+ 326   2            //Response:+ISCEN=<ISCEN>
+ 327   2            //            0 -- APP dosn't require a passcode
+ 328   2            //            1 -- open APP passcode switch
+ 329   2      /*      printf("AT+ISCEN\r\n"); 
+ 330   2            TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 331   2            Timer0_Delay1ms(200);     
+ 332   2            Timer0_Delay1ms(2);  */
+ 333   2            
+ 334   2            //Broadcast send data
+ 335   2      /*      putchar(0xAA);
+ 336   2            putchar(0xFB);
+ 337   2            putchar(0xFF);
+ 338   2            putchar(0xFF);
+ 339   2            printf("123456789A"); */
+ 340   2            strcpy (Data_Test,"IAMNOTFINEOK");      
+ 341   2            v_Load_Mesh_Send_Data(Instruction_Send,Address_Broadcast,Data_Test);
+ 342   2            
+ 343   2            //*Data_Test1 = "IAMNOTFINEOK";
+ 344   2            //v_Load_Mesh_Send_Data(Instruction_Send,Address_Broadcast,Data_Test1);
+ 345   2      
+ 346   2            
+ 347   2            TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 348   2            Timer0_Delay1ms(200);     
+ 349   2            Timer0_Delay1ms(2); 
+ 350   2            
+ 351   2            //printf(0x55);
+ 352   2            
+ 353   2            TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+ 354   2            //P12 = ~P12;   //In debug mode check UART_BUFFER[u16_CNT] to check receive data
+ 355   2            
+ 356   2            Timer0_Delay1ms(200);   
+ 357   2            Timer0_Delay1ms(2);   
+C51 COMPILER V9.00   MAIN                                                                  12/19/2018 17:13:48 PAGE 7   
+
+ 358   2          }
+ 359   1        
+ 360   1      }
+*** WARNING C280 IN LINE 196 OF SOURCE\MAIN.C: 'i': unreferenced local variable
+ 361          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    327    ----
+   CONSTANT SIZE    =     29    ----
+   XDATA SIZE       =    100    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     39      22
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

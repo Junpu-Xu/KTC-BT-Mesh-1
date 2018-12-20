@@ -1,0 +1,125 @@
+<html>
+<body>
+<pre>
+<h1>µVision Build Log</h1>
+<h2>Tool Versions:</h2>
+IDE-Version: ¦ÌVision V5.23.0.0
+Copyright (C) 2017 ARM Ltd and ARM Germany GmbH. All rights reserved.
+License Information: Junpu Xu, EasyRD, LIC=D0MII-T15AM-B0TNC-7EV6U-BMK3S-W19YC
+ 
+Tool Versions:
+Toolchain:       PK51 Prof. Developers Kit  Version: 9.00
+Toolchain Path:  D:\program files\Keil\C51\BIN
+C Compiler:      C51.exe V9.00
+Assembler:       A51.exe V8.01
+Linker/Locator:  BL51.exe V6.22
+Library Manager: LIB51.exe V4.24
+Hex Converter:   OH51.exe V2.6
+CPU DLL:         S8051.DLL V3.72
+Dialog DLL:      DP51.DLL V2.59
+Target DLL:      Nuvoton_8051_Keil_uVision_Driver.dll V1.09
+Dialog DLL:      TP51.DLL V2.58
+ 
+<h2>Project:</h2>
+D:\EasyRD\Projects\KTCºëìÚ£¬Kosnic\Ó¦¼±×Ô¼ì£¬BLE mesh\Software design\MCU,N76E003\v0.0.0,2018_03_21\KTC_BLE.uvproj
+Project File Date:  03/21/2018
+
+<h2>Output:</h2>
+Rebuild target 'KTC_BLE'
+compiling Main.c...
+Source\Main.c(18): warning C318: can't open file 'SFR_Macro.h'
+Source\Main.c(19): warning C318: can't open file 'Common.h'
+Source\Main.c(20): warning C318: can't open file 'Delay.h'
+Source\Main.c(21): warning C318: can't open file 'Function_define.h'
+SOURCE\MAIN.C(24): error C129: missing ';' before 'UART_BUFFER'
+compiling Common.c...
+Common\Common.c(15): warning C318: can't open file 'Common.h'
+Common\Common.c(16): warning C318: can't open file 'Delay.h'
+Common\Common.c(17): warning C318: can't open file 'SFR_Macro.h'
+Common\Common.c(18): warning C318: can't open file 'Function_define.h'
+COMMON\COMMON.C(23): error C141: syntax error near 'u32Baudrate', expected ')'
+COMMON\COMMON.C(25): error C202: 'P06_Quasi_Mode': undefined identifier
+COMMON\COMMON.C(26): error C202: 'P07_Quasi_Mode': undefined identifier
+COMMON\COMMON.C(31): error C202: 'set_SMOD': undefined identifier
+COMMON\COMMON.C(32): error C202: 'set_T1M': undefined identifier
+COMMON\COMMON.C(33): error C202: 'clr_BRCK': undefined identifier
+COMMON\COMMON.C(36): error C202: 'u32Baudrate': undefined identifier
+COMMON\COMMON.C(41): error C202: 'set_TR1': undefined identifier
+COMMON\COMMON.C(42): error C202: 'set_TI': undefined identifier
+COMMON\COMMON.C(45): error C141: syntax error near 'u32Baudrate', expected ')'
+COMMON\COMMON.C(47): error C202: 'P06_Quasi_Mode': undefined identifier
+COMMON\COMMON.C(48): error C202: 'P07_Quasi_Mode': undefined identifier
+COMMON\COMMON.C(51): error C202: 'set_SMOD': undefined identifier
+COMMON\COMMON.C(53): error C202: 'set_BRCK': undefined identifier
+COMMON\COMMON.C(56): error C202: 'u32Baudrate': undefined identifier
+COMMON\COMMON.C(57): error C202: 'u32Baudrate': undefined identifier
+COMMON\COMMON.C(63): error C202: 'set_TR3': undefined identifier
+COMMON\COMMON.C(64): error C202: 'set_TI': undefined identifier
+COMMON\COMMON.C(67): error C129: missing ';' before 'Receive_Data_From_UART0'
+compiling Delay.c...
+Common\Delay.c(15): warning C318: can't open file 'Common.h'
+Common\Delay.c(16): warning C318: can't open file 'Delay.h'
+Common\Delay.c(17): warning C318: can't open file 'SFR_Macro.h'
+Common\Delay.c(18): warning C318: can't open file 'Function_define.h'
+COMMON\DELAY.C(22): error C141: syntax error near 'u32CNT', expected ')'
+COMMON\DELAY.C(24): error C202: 'clr_T0M': undefined identifier
+COMMON\DELAY.C(26): error C202: 'set_TR0': undefined identifier
+COMMON\DELAY.C(27): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(29): error C202: 'TIMER_DIV12_VALUE_100us': undefined identifier
+COMMON\DELAY.C(30): error C202: 'TIMER_DIV12_VALUE_100us': undefined identifier
+COMMON\DELAY.C(32): error C202: 'clr_TF0': undefined identifier
+COMMON\DELAY.C(33): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(35): error C202: 'clr_TR0': undefined identifier
+COMMON\DELAY.C(38): error C141: syntax error near 'u32CNT', expected ')'
+COMMON\DELAY.C(40): error C202: 'clr_T0M': undefined identifier
+COMMON\DELAY.C(42): error C202: 'set_TR0': undefined identifier
+COMMON\DELAY.C(43): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(45): error C202: 'TIMER_DIV12_VALUE_1ms': undefined identifier
+COMMON\DELAY.C(46): error C202: 'TIMER_DIV12_VALUE_1ms': undefined identifier
+COMMON\DELAY.C(48): error C202: 'clr_TF0': undefined identifier
+COMMON\DELAY.C(49): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(51): error C202: 'clr_TR0': undefined identifier
+COMMON\DELAY.C(55): error C141: syntax error near 'u32CNT', expected ')'
+COMMON\DELAY.C(57): error C202: 'clr_T1M': undefined identifier
+COMMON\DELAY.C(59): error C202: 'set_TR1': undefined identifier
+COMMON\DELAY.C(60): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(62): error C202: 'TIMER_DIV12_VALUE_10ms': undefined identifier
+COMMON\DELAY.C(63): error C202: 'TIMER_DIV12_VALUE_10ms': undefined identifier
+COMMON\DELAY.C(65): error C202: 'clr_TF1': undefined identifier
+COMMON\DELAY.C(66): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(68): error C202: 'clr_TR1': undefined identifier
+COMMON\DELAY.C(71): error C141: syntax error near 'u32CNT', expected ')'
+COMMON\DELAY.C(73): error C202: 'clr_T2DIV2': undefined identifier
+COMMON\DELAY.C(74): error C202: 'clr_T2DIV1': undefined identifier
+COMMON\DELAY.C(75): error C202: 'set_T2DIV0': undefined identifier
+COMMON\DELAY.C(76): error C202: 'set_TR2': undefined identifier
+COMMON\DELAY.C(77): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(79): error C202: 'TIMER_DIV4_VALUE_500us': undefined identifier
+COMMON\DELAY.C(80): error C202: 'TIMER_DIV4_VALUE_500us': undefined identifier
+COMMON\DELAY.C(82): error C202: 'clr_TF2': undefined identifier
+COMMON\DELAY.C(83): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(85): error C202: 'clr_TR2': undefined identifier
+COMMON\DELAY.C(88): error C141: syntax error near 'u32CNT', expected ')'
+COMMON\DELAY.C(91): error C202: 'set_TR3': undefined identifier
+COMMON\DELAY.C(92): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(94): error C202: 'TIMER_DIV128_VALUE_100ms': undefined identifier
+COMMON\DELAY.C(95): error C202: 'TIMER_DIV128_VALUE_100ms': undefined identifier
+COMMON\DELAY.C(96): error C202: 'SET_BIT4': undefined identifier
+COMMON\DELAY.C(97): error C202: 'clr_TF3': undefined identifier
+COMMON\DELAY.C(98): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(100): error C202: 'clr_TR3': undefined identifier
+COMMON\DELAY.C(103): error C141: syntax error near 'u32CNT', expected ')'
+COMMON\DELAY.C(106): error C202: 'set_TR3': undefined identifier
+COMMON\DELAY.C(107): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(109): error C202: 'TIMER_DIV4_VALUE_10us': undefined identifier
+COMMON\DELAY.C(110): error C202: 'TIMER_DIV4_VALUE_10us': undefined identifier
+COMMON\DELAY.C(111): error C202: 'SET_BIT4': undefined identifier
+COMMON\DELAY.C(112): error C202: 'clr_TF3': undefined identifier
+COMMON\DELAY.C(113): error C202: 'u32CNT': undefined identifier
+COMMON\DELAY.C(115): error C202: 'clr_TR3': undefined identifier
+error - cannot create command input file '.\Output\..\..\..\EasyRD\Projects\KTCºëìÚ£¬Kosnic\Ó¦¼±×Ô¼ì£¬BLE mesh\Software design\MCU,N76E003\v0.0.0,2018_03_21\Startup\STARTUP._ia'
+Target not created.
+Build Time Elapsed:  00:00:01
+</pre>
+</body>
+</html>

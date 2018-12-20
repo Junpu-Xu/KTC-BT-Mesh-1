@@ -1,0 +1,8 @@
+".\Output\main.obj",
+".\Output\PUTCHAR.obj",
+".\Output\Common.obj",
+".\Output\Delay.obj",
+".\Output\STARTUP.obj" 
+TO ".\Output\KTC_BLE" 
+PRINT(".\LST\KTC_BLE.m51") RAMSIZE(256) 
+DISABLEWARNING (16) 
