@@ -1,9 +1,8 @@
-/*---------------------------------------------------------------------------------------------------------
-IDE information
 
+/*---------------------------------------------------------------------------------------------------------
 IDE-Version:
-uVision V5.23.0.0
-Copyright (C) 2017 ARM Ltd and ARM Germany GmbH. All rights reserved.
+uVision V5.25.3.0
+Copyright (C) 2018 ARM Ltd and ARM Germany GmbH. All rights reserved.
 
 License Information:
 Junpu Xu
@@ -11,18 +10,19 @@ EasyRD
 LIC=D0MII-T15AM-B0TNC-7EV6U-BMK3S-W19YC
 
 Tool Version Numbers:
-Toolchain:        PK51 Prof. Developers Kit  Version: 9.00
+Toolchain:        PK51 Prof. Developers Kit  Version: 9.59.0.0
 Toolchain Path:    D:\program files\Keil\C51\BIN
-C Compiler:         C51.exe    V9.00
-Assembler:          A51.exe    V8.01
-Linker/Locator:     BL51.exe    V6.22
-Librarian:             LIB51.exe    V4.24
-Hex Converter:      OH51.exe    V2.6
-CPU DLL:               S8051.DLL            V3.72
-Dialog DLL:         DP51.DLL             V2.59
+C Compiler:         C51.exe    V9.59.0.0
+Assembler:          A51.exe    V8.2.7.0
+Linker/Locator:     BL51.exe    V6.22.2.0
+Librarian:             LIB51.exe    V4.30.1.0
+Hex Converter:      OH51.exe    V2.7.0.0
+CPU DLL:               S8051.DLL            V3.122.0.0
+Dialog DLL:         DP51.DLL             V2.66.0.0
 Target DLL:             Nuvoton_8051_Keil_uVision_Driver.dll      V1.09
-Dialog DLL:         TP51.DLL             V2.58
+Dialog DLL:         TP51.DLL             V2.60.0.0
 --------------------------------------------------------------------------------*/
+
 
 
 /*----------------------------------Software version record -------------------------------------
