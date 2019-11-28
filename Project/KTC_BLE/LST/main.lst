@@ -1,0 +1,3547 @@
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 1   
+
+
+C51 COMPILER V9.59.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Output\main.obj
+COMPILER INVOKED BY: D:\program files\Keil_v5\C51\BIN\C51.EXE Source\main.c OPTIMIZE(8,SPEED) BROWSE INCDIR(..\..\Includ
+                    -e) DEFINE(FOSC_160000) DEBUG OBJECTEXTEND PRINT(.\LST\main.lst) TABS(2) OBJECT(.\Output\main.obj)
+
+line level    source
+
+   1          /*--------------------------------------------------------------------------------------------------------
+             --
+   2          IDE information
+   3          
+   4          IDE-Version:
+   5          uVision V5.23.0.0
+   6          Copyright (C) 2017 ARM Ltd and ARM Germany GmbH. All rights reserved.
+   7          
+   8          License Information:
+   9          Junpu Xu
+  10          EasyRD
+  11          LIC=D0MII-T15AM-B0TNC-7EV6U-BMK3S-W19YC
+  12          
+  13          Tool Version Numbers:
+  14          Toolchain:        PK51 Prof. Developers Kit  Version: 9.00
+  15          Toolchain Path:    D:\program files\Keil\C51\BIN
+  16          C Compiler:         C51.exe    V9.00
+  17          Assembler:          A51.exe    V8.01
+  18          Linker/Locator:     BL51.exe    V6.22
+  19          Librarian:             LIB51.exe    V4.24
+  20          Hex Converter:      OH51.exe    V2.6
+  21          CPU DLL:               S8051.DLL            V3.72
+  22          Dialog DLL:         DP51.DLL             V2.59
+  23          Target DLL:             Nuvoton_8051_Keil_uVision_Driver.dll      V1.09
+  24          Dialog DLL:         TP51.DLL             V2.58
+  25          --------------------------------------------------------------------------------*/
+  26          
+  27          
+  28          /*----------------------------------Software version record -------------------------------------
+  29          v0.0.0  2019_05_20
+  30          --initial version. Timmer configured,ADC configured
+  31          v0.0.1  2019_05_24
+  32          --UART functionality added
+  33          --ADC added,band-gap calibration added
+  34          
+  35          v0.0.2 2019_05_27
+  36          --under testing version only
+  37          
+  38          v0.0.3 2019_05_30
+  39          -- data flash operation added
+  40          
+  41          v0.0.5 2019_07_08
+  42          -- ADC sensing keys and switches implemented
+  43          
+  44          v0.0.6  2019_07_10
+  45          
+  46          v0.0.7  2019_07_13
+  47          
+  48          v0.0.8  2019_07_15
+  49          
+  50          v0.1.1  2019_07_23
+  51          -- first functional version
+  52          -- Battery & Lamp sensing calibrated...
+  53          
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 2   
+
+  54          v0.1.2  2019_08_02
+  55          -- Batter OVP added. (UVP=3.5V;OVP=4V)
+  56          
+  57          v0.1.3 2019_09_18
+  58          --GAP voltage calibrated
+  59          
+  60          v0.1.4  2019_09_20
+  61          ----------------------------------------------------------------------------------------------------------
+             ---*/
+  62          //********************************************************************************************************
+             -***
+  63          
+  64          //********************************************************************************************************
+             -***
+  65          // 
+  66          //********************************************************************************************************
+             -***
+  67          #include "N76E003.h"
+  68          #include "SFR_Macro.h"
+  69          #include "Common.h"
+  70          #include "Delay.h"
+  71          #include "string.h"
+  72          #include "stdlib.h"
+  73          #include "Function_define.h"
+  74          
+  75          //!!! IMPORTANT
+  76          //choose which project is to be worked with...
+  77          //#define BT_MESH_FEATURE_IN
+  78          #define EMERGENCY_LAMP_SINGLE_BATTERY
+  79          
+  80          #define SOFTWARE_INFO "software version = 0.1.4,2019_09_20\r\n"
+  81          
+  82          //Data flash
+  83          #define ADDR_BASE 0x4700
+  84          #define ADDR_SYSTEM_DATA  0x00    //relative address for system data
+  85          #define LENGTH_SYSTEM_DATA  0x10  //16 bytes for system data
+  86          
+  87          #define FLASH_L_LOW     ADDR_BASE+1
+  88          #define FLASH_L_HIGH    ADDR_BASE+2
+  89          #define FLASH_H_LOW     ADDR_BASE+3
+  90          #define FLASH_H_HIGH    ADDR_BASE+4
+  91          
+  92          volatile unsigned char xdata page_buffer[128];
+  93          void Read_APROM_PAGE();
+  94          void Write_DATAFLASH_BYTE_BUFFER(UINT8 u8_address,UINT8 u8_Data);
+  95          UINT8 Read_APROM_BYTE(UINT16 code *u16_addr);
+  96          void Write_DATAFLASH_BYTE(unsigned int u16EPAddr,unsigned char u8EPData);
+  97          void Write_DATAFLASH_PAGE(void);
+  98          void clear_flash(void);
+  99          void system_save_data(void);
+ 100          void system_read_data(void);
+ 101          
+ 102          //timmer
+ 103            bit F_1ms = 0;
+ 104            bit F_500ms = 0;
+ 105            UINT16 xdata ui_Day_counter = 0;
+ 106            UINT8 xdata uc_Hour_counter = 0;
+ 107            UINT8 xdata uc_Minute_counter = 0;
+ 108            UINT8 xdata uc_Second_counter = 0;
+ 109            UINT8 xdata uc_500ms_counter = 0;
+ 110            
+ 111            UINT16 xdata ui_Duration_Test_Cycle_Day = 0;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 3   
+
+ 112            UINT8 xdata uc_Duration_Test_Cycle_Hour = 0,uc_Duration_Test_Cycle_Minute = 0,uc_Duration_Test_Cycle_Seco
+             -nd = 0;
+ 113          
+ 114            UINT8 xdata uc_AC_Charging_Time_Second = 0,uc_AC_Charging_Time_Minute = 0,uc_AC_Charging_Time_Hour = 0;
+ 115            UINT8 xdata uc_AC_Charging_Target_Hour = 0,uc_AC_Charging_Target_Minute = 0,uc_AC_Charging_Target_Second 
+             -= 0;
+ 116            UINT8 xdata uc_Duration_Test_Time_Second = 0,uc_Duration_Test_Time_Minute = 0,uc_Duration_Test_Time_Hour 
+             -= 0,uc_Duration_Test_Done = 0;
+ 117            UINT8 xdata uc_Emergency_Time_Second = 0,uc_Emergency_Time_Minute = 0,uc_Emergency_Time_Hour = 0;
+ 118            UINT8 xdata uc_Functional_Test_Time_Second = 0,uc_Functional_Test_Done = 0;
+ 119          
+ 120            UINT16 xdata ui_ms_counter = 0; 
+ 121          
+ 122          //UART 
+ 123          #define UART_ECHO_DEBUG
+ 124          
+ 125            #define BUFFER_SIZE   16
+ 126            char xdata *UART_BUFFER;
+ 127            char xdata *UART_BUFFER_TEMP;
+ 128            UINT16 xdata u16_CNT=0,u16_CNT1=0;
+ 129            bit riflag;
+ 130            volatile UINT8 xdata U8_UART_Receive_Pakage_Status;
+ 131            #define UART_RECEIVE_PACKAGE_START  1
+ 132            #define UART_RECEIVE_PACKAGE_COMPLETE 2
+ 133            #define UART_RECEIVE_PACKAGE_PAUSE  0
+ 134          
+ 135            #define TxBufferSize  150
+ 136            #define RxBufferSize  80
+ 137            
+ 138            volatile UINT8 xdata U8_UART_BUS_STATUS = 0;
+ 139            #define UART_BUS_STATUS_STANDBY 0 //ready for communication
+ 140            #define UART_BUS_STATUS_BUSY  1 //UART is busy now
+ 141            
+ 142            volatile UINT8 U8_UART_TxD_Handle_STATUS = 0;
+ 143            #define UART_HANDLE_STATUS_STANDBY  0
+ 144            #define UART_HANDLE_STATUS_BUSY 1
+ 145            #define UART_HANDLE_STATUS_WAITING_ACK  2 //MCU waits for ACK from BT
+ 146            #define UART_HANDLE_STATUS_WAITING_ANSWER 3 //MCU waits for answer from BT
+ 147            #define UART_HANDLE_STATUS_TIME_OUT 4
+ 148            #define UART_HANDLE_STATUS_TO_REPORT  5 //MCU is going to report to BT
+ 149            #define UART_HANDLE_STATUS_TO_ACK 6 //MCU is going to ack BT\
+ 150            
+ 151            UINT8 xdata U8_UART_TxD_Handle_ticks_ms = 0;
+ 152            #define UART_TxD_HANDLE_CYCLE_MS  5
+ 153            
+ 154            #define UART_MAX_TRY_TIMEOUT  4
+ 155            
+ 156            UINT8 U8_UART_TxD_Handle(void);
+ 157            UINT8 U8_UART_RxD_Handle(void);
+ 158          
+ 159            struct Mesh_Data_package
+ 160            {
+ 161              UINT8 DATA_Package_Header;
+ 162              UINT8 Target_Short_Address;
+ 163              UINT8 DATA_Length;    
+ 164              UINT8 Function_Byte;
+ 165              UINT8 DATA[9];
+ 166              UINT8 STATUS;
+ 167              UINT8   DATA_Pointer;
+ 168            } xdata Mesh_Data_RxD,Mesh_Data_TxD;
+ 169            #define MESH_Data_RxD_STANDBY 0
+ 170            #define MESH_Data_RxD_TO_be_Processed 1
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 4   
+
+ 171            #define MESH_Data_RxD_BUSY  2
+ 172            
+ 173            #define MESH_Data_Pointer_Header  0
+ 174            #define MESH_Data_Pointer_Address 1
+ 175            #define MESH_Data_Pointer_Length  2
+ 176            #define MESH_Data_Pointer_FB  3
+ 177            #define MESH_Data_Pointer_DB8 4
+ 178            #define MESH_Data_Pointer_DB7 5
+ 179            #define MESH_Data_Pointer_DB6 6
+ 180            #define MESH_Data_Pointer_DB5 7
+ 181            #define MESH_Data_Pointer_DB4 8
+ 182            #define MESH_Data_Pointer_DB3 9
+ 183            #define MESH_Data_Pointer_DB2 10
+ 184            #define MESH_Data_Pointer_DB1 11
+ 185            #define MESH_Data_Pointer_DB0 12
+ 186          
+ 187            #define Instruction_Send  0xAAFB
+ 188            #define Address_Broadcast 0xFFFF
+ 189          
+ 190            UINT8 xdata TxBuffer[TxBufferSize]; 
+ 191            UINT8 xdata RxBuffer[RxBufferSize];
+ 192            volatile UINT8 RxBuffer_read_counter = 0x00;
+ 193            volatile UINT8 RxBuffer_write_counter = 0x00;
+ 194            volatile UINT8 TxBuffer_read_counter = 0x00;
+ 195            volatile UINT8 TxBuffer_write_counter = 0x00;
+ 196          
+ 197          void v_UART_BT_Answer_processing();
+ 198          
+ 199          //ADC
+ 200          //Load-Lamp voltage sensing: 100K + 4.7K
+ 201          #define LOAD_OVP_1V   1
+ 202          #define LOAD_OVP_mV 1794  //1.79V @AIN, 40V lamp voltage when open (35V requested)
+ 203          #define LOAD_FALLING_1V 0
+ 204          #define LOAD_FALLING_0_01V 48 //0.48V @AIN
+ 205          #define LOAD_OPEN_1V  0
+ 206          #define LOAD_OPEN_mV  50  //0.05V @AIN
+ 207          
+ 208          //battery voltage sensing: 3.3K + 33K
+ 209          #define BATTERY_UVP_mV  3180  //3.18V @AIN,battery voltage 3.5V
+ 210          #define BATTERY_DIS_INTERNAL_LOSS_mV  200 //Batter internal voltage loss compensation. 0.2V@MCU = 0.22V bat
+             -tery voltage drop during discharging
+ 211          #define BATTERY_NC_1V 0
+ 212          #define BATTERY_NC_mV 450 //0.45V @AIN,0.5V gap between connect & disconnect battery
+ 213          #define BATTERY_OVP_mV  3640  //3.64V @AIN,battery voltage 4V
+ 214          #define BATTERY_CHAG_INTERNAL_LOSS_mV 90  //Batter internal voltage loss compensation. 0.09V@MCU = 0.1V bat
+             -tery voltage drop during charging
+ 215          
+ 216          
+ 217          #ifdef BT_MESH_FEATURE_IN
+                //BT related definition
+                #define PWRC_AT_INSTRUCTION_MODE  clr_P14
+                #define PWRC_TRANS_MODE   set_P14
+                #define BT_STAT_PIN   P15
+                #define BT_RESET_PIN  P05
+                UINT8 U8_BT_Connect_Status(void); 
+                
+                UINT8 xdata U8_BT_Short_Address = 0;
+              
+                #define KEY_AUTO_MANUAL_REF1_1V 1
+                #define KEY_AUTO_MANUAL_REF1_0_01V  34  //1.34V
+                #define KEY_AUTO_MANUAL_REF2_1V 1
+                #define KEY_AUTO_MANUAL_REF2_0_01V  65  //1.65V
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 5   
+
+                #define KEY_AUTO_MANUAL_REF3_1V 2
+                #define KEY_AUTO_MANUAL_REF3_0_01V  24  //2.24V
+                
+                UINT8 xdata KEY_AUTO_TEST_STATUS_TMP,KEY_MANUAL_TEST_STATUS_TMP;
+                UINT8 xdata KEY_AUTO_TEST_STATUS,KEY_MANUAL_TEST_STATUS;
+                UINT8 xdata KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER;
+                
+                #define SW_3_BITS_REF1_1V 1
+                #define SW_3_BITS_REF1_0_01V  23  //1.23V
+                #define SW_3_BITS_REF2_1V 1
+                #define SW_3_BITS_REF2_0_01V  34  //1.34V
+                #define SW_3_BITS_REF3_1V 1
+                #define SW_3_BITS_REF3_0_01V  49  //1.49V
+                #define SW_3_BITS_REF4_1V 1
+                #define SW_3_BITS_REF4_0_01V  65  //1.65V
+                #define SW_3_BITS_REF5_1V 1
+                #define SW_3_BITS_REF5_0_01V  96  //1.96V
+                #define SW_3_BITS_REF6_1V 2
+                #define SW_3_BITS_REF6_0_01V  24  //2.24V
+                #define SW_3_BITS_REF7_1V 2
+                #define SW_3_BITS_REF7_0_01V  72  //2.72V 
+                
+                UINT8 xdata SW_S1_STATUS_TMP,SW_S2_STATUS_TMP,SW_S3_STATUS_TMP;
+                UINT8 xdata SW_S1_STATUS,SW_S2_STATUS,SW_S3_STATUS;
+                UINT8 xdata SW_3_BITS_SENSING_FILTER_CUNTER;
+                
+                #define KEY_SENSE_FILTER  10  
+              #endif
+ 259            volatile bit F_ADC_Complete = 0;
+ 260            bit F_ADC_All_Channels_Complete = 0;
+ 261            UINT16 xdata ADC_Value_Array[10] = {0x03ff};
+ 262            UINT8 xdata ADC_index = 0;  
+ 263            
+ 264            UINT16 xdata ADC_Value = 0;
+ 265            UINT16 xdata Bandgap_Value = 0;
+ 266            UINT16 xdata Load_Value = 0;
+ 267            UINT16 xdata Load_Value_mV = 0;
+ 268            UINT16 xdata Battery_Value = 0;
+ 269            UINT16 xdata Battery_Value_mV = 0;
+ 270            UINT16 xdata Battery_Value_mV_bkup = 0;
+ 271            UINT16 xdata KEY_Auto_Manual_Value = 0;
+ 272            UINT16 xdata SW_3_bits_Value = 0; 
+ 273          
+ 274          
+ 275            UINT16 xdata Battery_Value_array[10] = {0x03ff};
+ 276            UINT8 xdata Battery_index = 0;
+ 277            UINT8 xdata lamp_bad = 0;
+ 278            UINT8 xdata Battery_bad = 0;
+ 279            UINT8 xdata Battery_Fully_Charged = 0;
+ 280            UINT8 xdata uc_Lamp_bad_counter = 0;
+ 281            
+ 282            UINT16 xdata ADC_Value_Max = 0;
+ 283            UINT16 xdata ADC_Value_Min = 0x3FFF;
+ 284            UINT16 xdata battery_max = 0;
+ 285            UINT16 xdata battery_min = 0x3FFF;
+ 286            UINT16 xdata Load_max = 0;
+ 287            UINT16 xdata Load_min = 0x3FFF;
+ 288            
+ 289            bit F_OVP_Rising = 0;
+ 290            bit F_OVP_Falling = 0;
+ 291            
+ 292          // system state machines
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 6   
+
+ 293            UINT8 uc_System_State = 0;
+ 294            #define System_Reset  0
+ 295            #define AC_Charging   1
+ 296            #define Battery_Fault 2
+ 297            #define Functional_Test 3
+ 298            #define Duration_Test 4
+ 299            #define Battery_Life_Fault  5
+ 300            #define Lamp_Fault    6
+ 301            #define Emergency_Operation 7
+ 302            #define Reset_Charging_Time 8 
+ 303          
+ 304            bit F_Duration_Test = 0;
+ 305            bit F_Duration_Test_Pending = 1;
+ 306            bit F_Mannual_Duration_Test_Pending;
+ 307            bit F_Functional_Test;
+ 308            bit F_Charging_Full;
+ 309          
+ 310          //LED operation
+ 311            #define OFF   0
+ 312            #define Flashing_Slow 4
+ 313            #define Flashing_Medium 2
+ 314            #define Flashing_Fast 3
+ 315            #define ON        1
+ 316            UINT8 xdata led_green_state = OFF;
+ 317            UINT8 xdata led_red_state = OFF;
+ 318            UINT8 xdata led_green_state_before_test,led_red_state_before_test,led_red_state_before_Emergency;
+ 319          
+ 320            #define GREEN_LED_PIN_LOW clr_P00
+ 321            #define GREEN_LED_PIN_HIGH  set_P00
+ 322            #define GREEN_LED_PIN_TOGGLE  P00 = ~P00
+ 323            #define RED_LED_PIN_LOW clr_P01
+ 324            #define RED_LED_PIN_HIGH  set_P01 
+ 325            #define RED_LED_PIN_TOGGLE  P01 = ~P01  
+ 326          //testing mode
+ 327            UINT8 xdata auto_test_flag = 0;  // 1: Auto-self, 0:Normal
+ 328          
+ 329          
+ 330          //battery charging detection
+ 331            UINT8 xdata U8_Battery_Discharge_ticks_ms = 0;
+ 332            #define Battery_NC_Check_Discharge_Ticks_ms   10  //10ms every 5 Second
+ 333            UINT8 xdata uc_Battery_Charging_Flag_Pre =0;
+ 334            UINT8 xdata uc_Battery_Fault_Flag = 0;
+ 335          
+ 336          //key detection 
+ 337            #define KEY_AUTO_TEST P13
+ 338            #define KEY_MANUAL_TEST P05
+ 339          
+ 340            UINT8 xdata key_state = 0;
+ 341            UINT8 xdata key_state_prev = 0;
+ 342            UINT16 xdata ui_Key_Pressed_ms_counter = 0;
+ 343          
+ 344          
+ 345          //AC mains detection
+ 346            //sbit AC_MAIN_DETECT  =P1^1; //CHRG_DET, check if AC mains available
+ 347            #define AC_MAIN_DETECT P11  //CHRG_DET, check if AC mains available
+ 348          
+ 349            UINT8 xdata AC_Mains_state = 0;
+ 350            UINT8 xdata uc_AC_Mains_State_ms_counter = 0;
+ 351          
+ 352          //LAMP CTL,Battery Ctl
+ 353          #ifdef EMERGENCY_LAMP_SINGLE_BATTERY
+ 354            #define LAMP_EN   P14
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 7   
+
+ 355            #define LAMP_CTL  P15   //LAMP CTL pin
+ 356            #define CHARGE_ENABLE P10
+ 357          #endif
+ 358          
+ 359          #ifdef BT_MESH_FEATURE_IN
+                #define LAMP_EN   P10   //to be checked???
+                #define LAMP_CTL  P10   //LAMP CTL pin
+                #define CHARGE_ENABLE P17
+              #endif  
+ 364          
+ 365          UINT8 xdata uc_Charging_Status;
+ 366            
+ 367          static void Var_Init(void);
+ 368          static void v_Timming_Processing(void);
+ 369          static void v_LED_Operation(void);
+ 370          static void v_Battery_Charging_Operation(void);
+ 371          static void v_Key_Detection(void);
+ 372          static void v_KEY_AUTO_MANUAL_SENSE();
+ 373          static UINT8 U8_SW_3_BITS_SENSE();
+ 374          static void v_AC_Mains_Detection(void);
+ 375          static void v_State_Machine_Processing(void);
+ 376          static void v_Auto_Test_Detect(void);
+ 377          static void Battery_Test_Proc(void);
+ 378          static void Load_Test_Proc(void);
+ 379          static void v_ADC_process(void);
+ 380          UINT16 Bandgap_Calibrate(UINT8 Value_1V,UINT8 Value_0_01V);
+ 381          UINT16 ADC_to_AIN_mV(UINT16 Value_ADC);
+ 382          UINT16 U16_Read_Bandgap();
+ 383          UINT16 xdata U16_Bandgap_Value;
+ 384          
+ 385          char asciitohex(char ascii_byte);
+ 386          char hextoascii(char hex_byte);
+ 387          
+ 388          void v_init();
+ 389          void v_BT_Init();
+ 390          void v_Load_Mesh_Send_Data(UINT16 Instruction,UINT16 Address,UINT8 Data[]);
+ 391          
+ 392          //every 1 ms
+ 393          void Timer1_Overflow_ISR(void) interrupt 3
+ 394          {
+ 395   1        clr_TF1;  //clear overflow flag
+ 396   1        clr_TR1;
+ 397   1        TH1 = 0xFA;
+ 398   1        TL1 = 0xCB;
+ 399   1        set_TR1;
+ 400   1        
+ 401   1        F_1ms = 1;
+ 402   1      
+ 403   1        
+ 404   1      }
+ 405          
+ 406          /**
+ 407           * FUNCTION_PURPOSE: serial interrupt, echo received data.
+ 408           * FUNCTION_INPUTS: P0.7(RXD) serial input
+ 409           * FUNCTION_OUTPUTS: P0.6(TXD) serial output
+ 410           */
+ 411          void SerialPort0_ISR(void) interrupt 4 
+ 412          {
+ 413   1        if (RI==1)
+ 414   1        {                                       /* if reception occur */
+ 415   2          clr_RI;                             /* clear reception flag for next reception */
+ 416   2          RxBuffer[RxBuffer_write_counter] = SBUF;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 8   
+
+ 417   2          
+ 418   2      #ifdef UART_ECHO_DEBUG
+ 419   2        putchar(RxBuffer[RxBuffer_write_counter]);
+ 420   2      #endif    
+ 421   2          
+ 422   2          //SBUF = RxBuffer[RxBuffer_write_counter];
+ 423   2          
+ 424   2          RxBuffer_write_counter ++;
+ 425   2          if(RxBuffer_write_counter >= RxBufferSize)
+ 426   2          {
+ 427   3            RxBuffer_write_counter = 0;
+ 428   3          }
+ 429   2      
+ 430   2          riflag =1;
+ 431   2          
+ 432   2          
+ 433   2          }
+ 434   1          if(TI==1)
+ 435   1        {
+ 436   2          clr_TI;                             /* if emission occur */
+ 437   2          if(TxBuffer_read_counter != TxBuffer_write_counter)
+ 438   2          {
+ 439   3            SBUF = TxBuffer[TxBuffer_read_counter];
+ 440   3            TxBuffer_read_counter ++;
+ 441   3            if(TxBuffer_read_counter >= TxBufferSize)
+ 442   3            {
+ 443   4              TxBuffer_read_counter = 0;
+ 444   4            }
+ 445   3            
+ 446   3            U8_UART_BUS_STATUS = UART_BUS_STATUS_BUSY;
+ 447   3          } 
+ 448   2          else
+ 449   2          {
+ 450   3            U8_UART_BUS_STATUS = UART_BUS_STATUS_STANDBY;
+ 451   3          }
+ 452   2        }
+ 453   1      }
+ 454          
+ 455          void Timer2_Event_ISR(void) interrupt 5
+ 456          {
+ 457   1        clr_TF2;  //clear overflow flag
+ 458   1        F_500ms = 1;
+ 459   1        //P00 = ~P00;
+ 460   1        //P01 = ~P01;
+ 461   1        
+ 462   1      }
+ 463          
+ 464          void ADC_Complete_ISR(void) interrupt 11
+ 465          {
+ 466   1        clr_ADCF; //clear overflow flag
+ 467   1      
+ 468   1        F_ADC_Complete = 1; //Set flag of ADC complete
+ 469   1        //set_ADCS;
+ 470   1        
+ 471   1        
+ 472   1        
+ 473   1        
+ 474   1      }
+ 475          
+ 476          char putchar (char c)
+ 477          {
+ 478   1      //    while (!TI_1);  /* wait until transmitter ready */
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 9   
+
+ 479   1        TxBuffer[TxBuffer_write_counter] = c;
+ 480   1        TxBuffer_write_counter ++;
+ 481   1        if(TxBuffer_write_counter >= TxBufferSize)
+ 482   1        {
+ 483   2          TxBuffer_write_counter = 0;
+ 484   2        }
+ 485   1          
+ 486   1          //SBUF = c;      /* output character */
+ 487   1          return (c);
+ 488   1      }
+ 489          
+ 490          void v_Load_Mesh_Send_Data(UINT16 Instruction,UINT16 Address,UINT8 Data[])
+ 491          {
+ 492   1        UINT8 temp_Mesh_Send_Data,i_Mesh_Send_Data;
+ 493   1      
+ 494   1        //load instruction
+ 495   1        temp_Mesh_Send_Data = (Instruction >> 8) & 0xFF;
+ 496   1        putchar(temp_Mesh_Send_Data); 
+ 497   1        temp_Mesh_Send_Data = Instruction & 0xFF;
+ 498   1        putchar(temp_Mesh_Send_Data);
+ 499   1        
+ 500   1        //load address
+ 501   1        temp_Mesh_Send_Data = (Address >> 8) & 0xFF;
+ 502   1        putchar(temp_Mesh_Send_Data); 
+ 503   1        temp_Mesh_Send_Data = Address & 0xFF;
+ 504   1        putchar(temp_Mesh_Send_Data); 
+ 505   1        
+ 506   1        //load data
+ 507   1        //10 bytes data
+ 508   1        for(i_Mesh_Send_Data = 0;i_Mesh_Send_Data < 10; i_Mesh_Send_Data++)
+ 509   1        {
+ 510   2          putchar(Data[i_Mesh_Send_Data]);
+ 511   2        }
+ 512   1        
+ 513   1        
+ 514   1      }
+ 515          
+ 516          //v_init() function
+ 517          void v_init()
+ 518          { 
+ 519   1        //Clock source: HIRC=16MHz
+ 520   1        set_HIRCST; 
+ 521   1        //CKDIV = 1;  //clock divider = 1. F_sys = 16MHz/2 = 8MHz
+ 522   1      
+ 523   1        set_CLOEN;  //Clock Output Enable
+ 524   1        
+ 525   1        /*
+ 526   1        Timer2 setting, system real time clock
+ 527   1        */
+ 528   1        //T2MOD setting
+ 529   1        {
+ 530   2          set_LDEN; //Enable Auto-reload
+ 531   2          TIMER2_DIV_256; //T2DIV = 101, divider = 128
+ 532   2          clr_CAPCR;  //
+ 533   2          clr_LDTS1;
+ 534   2          clr_LDTS0;  //Auto reload when timer2 overflow
+ 535   2          //Auto reload value
+ 536   2          RCMP2H = 0x85;
+ 537   2          RCMP2L = 0xEE;  //To generate 2Hz real time clock. auto reload valaue = 65536 - 8MHz/128 = 34286;
+ 538   2      
+ 539   2          clr_CMRL2;  //Timer2 in auto-reload mode
+ 540   2          
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 10  
+
+ 541   2          set_ET2;  //Enable Timer2 interrup
+ 542   2      
+ 543   2          set_TR2;  //Start Timer2
+ 544   2        }
+ 545   1        
+ 546   1        /*
+ 547   1        Timer1 setting, system tick clock
+ 548   1        */
+ 549   1        {
+ 550   2          TIMER1_MODE1_ENABLE;  //Timer1,16bits counter mode
+ 551   2          
+ 552   2          TIMER0_MODE1_ENABLE;  //Timer0,16bits counter mode
+ 553   2          clr_GATE_T1;
+ 554   2          clr_CT_T1;
+ 555   2          
+ 556   2          clr_T1M;  //Timer0 clock is 1/12 of system clock
+ 557   2          P2S = 0;
+ 558   2          
+ 559   2          set_ET1;  //Enable Timer1 interrup
+ 560   2          
+ 561   2          set_TR1;  //Start Timer1
+ 562   2        }
+ 563   1        
+ 564   1        /*
+ 565   1        ADC configuration
+ 566   1        */  
+ 567   1        {
+ 568   2          Enable_ADC_AIN5;
+ 569   2          Enable_ADC_AIN6;
+ 570   2          Enable_ADC_BandGap;
+ 571   2          
+ 572   2          clr_ADCEX;  //ADC start via setting ADCS bit
+ 573   2          
+ 574   2          clr_ADFBEN;   //ADC asserting Fault Brake Disabled
+ 575   2          clr_ADCMPEN;  //ADC result comparator Disabled
+ 576   2          
+ 577   2          set_EADC; //Enable ADC interrupt
+ 578   2          
+ 579   2          set_ADCEN;  //ADC enable
+ 580   2          
+ 581   2        }
+ 582   1        
+ 583   1        
+ 584   1      
+ 585   1        /*
+ 586   1        Pin configuration
+ 587   1        */
+ 588   1      #ifdef EMERGENCY_LAMP_SINGLE_BATTERY
+ 589   1        {
+ 590   2          P05_Quasi_Mode;   //Pin1,Key_Manual_Test
+ 591   2          P06_PushPull_Mode;  //Pin2, TxD
+ 592   2          P07_Quasi_Mode;   //Pin3,RxD
+ 593   2          
+ 594   2          P15_PushPull_Mode;  //Pin10,LAMP_CTL
+ 595   2          P14_PushPull_Mode;  //Pin11,LAMP_EN
+ 596   2          P13_Quasi_Mode;   //Pin12,Key_Auto_Test
+ 597   2          
+ 598   2          P11_Input_Mode;   //Pin14,CHG_DET
+ 599   2          P10_PushPull_Mode;  //Pin15,CHRG_EN
+ 600   2          P00_PushPull_Mode;  //Pin16,LED_GREEN
+ 601   2          P01_PushPull_Mode;  //Pin17,LED_RED
+ 602   2          
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 11  
+
+ 603   2          P03_Input_Mode;   //Pin19,VBAT
+ 604   2          #define VBAT_ADC_CHANNEL_NR 6 //channel 6
+ 605   2          P04_Input_Mode;   //Pin20,VLAMP
+ 606   2          #define VLAMP_ADC_CHANNEL_NR  5 //Channel 5
+ 607   2        }
+ 608   1      #endif
+ 609   1      #ifdef BT_MESH_FEATURE_IN
+                {
+                  P05_PushPull_Mode;    //Pin1,Reset_BT
+                  P06_PushPull_Mode;  //Pin2, TxD
+                  P07_Quasi_Mode;   //Pin3,RxD
+                  
+                  P30_Input_Mode;   //Pin5,SW_detect  AIN1 for detecting 3bits switch
+                  #define SW_DET_ADC_CHANNEL_NR 1 //channel 1
+                  
+                  P17_PushPull_Mode;  //Pin6,CHRG_EN
+                  
+                  
+                  P15_Quasi_Mode; //Pin10,BT_STAT
+                  P14_PushPull_Mode;  //Pin11,BT_PWRC
+                  P13_Quasi_Mode;   //Pin12,CHRG_Status
+                  P12_Quasi_Mode;   //Pin13,POWER_DET
+                  
+                  P11_Input_Mode;   //Pin14,KEY_AUTO_Manual AIN7 for detecting Auto/Manual test button
+                  #define KEY_AUTO_MANUAL_ADC_CHANNEL_NR  7 //channel 7
+                  
+                  P10_PushPull_Mode;  //Pin15,LAMP_CTL
+                  P00_PushPull_Mode;  //Pin16,LED_GREEN
+                  P01_PushPull_Mode;  //Pin17,LED_RED
+                  
+                  P03_Input_Mode;   //Pin19,VLAMP
+                  #define VLAMP_ADC_CHANNEL_NR  6 //Channel 6
+                  P04_Input_Mode;   //Pin20,VBAT
+                  #define VBAT_ADC_CHANNEL_NR 5 //channel 5
+                }
+              #endif
+ 639   1      
+ 640   1        AC_MAIN_DETECT = ON;  
+ 641   1      
+ 642   1        InitialUART0_Timer3(115200);
+ 643   1      
+ 644   1      
+ 645   1        set_RB8;          //This bit is for setting the stop bit 2 high/low status,  */
+ 646   1        clr_TI; 
+ 647   1          set_ES;           //enable UART interrupt
+ 648   1          set_EA;           //enable global interrupt
+ 649   1        
+ 650   1        Var_Init();
+ 651   1      }
+ 652          
+ 653          #ifdef BT_MESH_FEATURE_IN
+              void v_BT_Init()
+              {
+                UINT8 U8_i_temp = 0;
+                BT_RESET_PIN = 1;
+                
+                  
+                  
+              
+              /*    //Querry Version number
+                  //Response:JDY-10M-Y2.3-MESH
+                  printf("AT+VER\r\n");
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 12  
+
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(100);
+              
+                  //Querry MAC address
+                  //Response:+MAC:<mac address>
+                  printf("AT+MAC\r\n");
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200);  */
+                  
+              /*    while(U8_UART_Receive_Pakage_Status != UART_RECEIVE_PACKAGE_COMPLETE)
+                  {
+                    U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_PAUSE;
+                    v_UART_BT_Answer_processing();
+                  }
+                  printf("%s",UART_BUFFER);
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(10); */
+              
+                  //SET soft reset
+                  //Response:+OK
+                  PWRC_AT_INSTRUCTION_MODE;
+                    printf("AT+RESET\r\n"); 
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200); 
+                  Timer0_Delay1ms(2); 
+                  PWRC_TRANS_MODE;
+                  v_UART_BT_Answer_processing();    
+              
+              
+                  //SET BT name
+                  //Response:+OK
+                  PWRC_AT_INSTRUCTION_MODE;
+                    printf("AT+NAMEKTC-BT-MESH-1\r\n"); 
+                  //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200); 
+                  Timer0_Delay1ms(2); 
+                  PWRC_TRANS_MODE;
+                  v_UART_BT_Answer_processing();
+              
+                  
+              
+              /*    //Querry BT name
+                  //Response:+NAME=<BT name>
+                    printf("AT+NAME\r\n");
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200); 
+                  Timer0_Delay1ms(2);    */   
+                  
+                  //Querry BAUD rate
+                  //Response:+BAUD=<0--115200>
+                  //printf("AT+BAUD\r\n");  
+              
+                  //Set device type
+                  //Response:+ok
+                  /*
+                      A0:Transparent transmission mode
+                      B1:LED light mode
+                      C0:Low power consumption telecontroller     
+                  */
+                  //printf("AT+CLSSA0\r\n");
+                    
+              
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 13  
+
+              
+              
+                  //Querry device type
+                  //Response:+CLSS=<A0--Transparent transmission mode>
+                  PWRC_AT_INSTRUCTION_MODE;
+                  printf("AT+CLSS\r\n");
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(2000);
+                  PWRC_TRANS_MODE;
+                  v_UART_BT_Answer_processing();
+              
+                  
+                  //SET mesh network ID 
+                  //(ID has to be exactly 12 characters, if not enough, fill in with space)
+                  //(ID has to be data within 0-9,A,B,C,D,E,F)
+                  //Response:+OK
+                  PWRC_AT_INSTRUCTION_MODE;
+                  printf("AT+NETID0123456BCDEF\r\n"); 
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200); 
+                  Timer0_Delay1ms(2); 
+                  PWRC_TRANS_MODE;
+                  v_UART_BT_Answer_processing();
+                  
+                
+              
+                  //Querry mesh network ID
+                  //Response:+NETID=<netID>
+                  //printf("AT+NETID\r\n");   
+                  //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  //Timer0_Delay1ms(200); 
+                  //Timer0_Delay1ms(2);     
+              
+                  //SET mesh network short address
+                  //(short address has to be exactly 2 characters, if not enough, fill in with space)
+                  //(short address has to be data within 0-9,A,B,C,D,E,F)
+                  //Response:+OK
+                  //printf("AT+MADDR55\r\n"); 
+                  //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  //Timer0_Delay1ms(200); 
+                  //Timer0_Delay1ms(2);       
+                  
+              
+                  //Querry mesh network short address
+                  //Response:+MADDR=<short address>
+                  PWRC_AT_INSTRUCTION_MODE;
+                  U8_i_temp = 0;    
+                  while((U8_UART_Receive_Pakage_Status != UART_RECEIVE_PACKAGE_COMPLETE) && (U8_i_temp < UART_MAX_TRY_TIM
+             -EOUT))  //try max UART_MAX_TRY_TIMEOUT times
+                  {
+                    printf("AT+MADDR\r\n"); 
+                    TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                    Timer0_Delay1ms(100);       
+                    v_UART_BT_Answer_processing();
+                    
+                    U8_i_temp++;      
+                  }   
+                  if(U8_i_temp >= UART_MAX_TRY_TIMEOUT)
+                  {
+                    printf("Gets BT Mesh short address fail\r\n");  
+                    TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                    Timer0_Delay1ms(20);
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 14  
+
+                  }
+                  else
+                  { 
+                    U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_PAUSE;
+                    printf("%s",UART_BUFFER);
+                    TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                    Timer0_Delay1ms(10); 
+                    //U8_BT_Short_Address = (((*(UART_BUFFER +7))-0x30) << 4) + ((*(UART_BUFFER +8))-0x30);
+                    U8_BT_Short_Address = asciitohex(*(UART_BUFFER +7));
+                    U8_BT_Short_Address = (U8_BT_Short_Address << 4);
+                    U8_BT_Short_Address = asciitohex(*(UART_BUFFER +8)) + U8_BT_Short_Address;
+                  }
+                  PWRC_TRANS_MODE;
+                  
+                  
+                  //SET APP connection passcode
+                  //(APP connection passcode has to be exactly 4 characters, if not enough, fill in with space)
+                  //(APP connection passcode can be any asCII code)
+                  //Response:+OK
+              /*      printf("AT+PSS8HAB\r\n");         
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200); 
+                  Timer0_Delay1ms(2);    */ 
+              
+                  //Querry APP connection passcode
+                  //Response:+PSS=<passcode>
+              /*      printf("AT+PSS\r\n");
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200); 
+                  Timer0_Delay1ms(2); */        
+              
+                  //SET APP passcode connection switch
+                  //ISCEN0 -- APP dosn't require a passcode
+                  //ISCEN1 -- open APP passcode switch
+                  //Response:+OK
+              /*      printf("AT+ISCEN0\r\n");  
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200); 
+                  Timer0_Delay1ms(2);       
+                   */
+                
+              
+                  //Querry APP passcode connection switch
+                  //Response:+ISCEN=<ISCEN>
+                  //            0 -- APP dosn't require a passcode
+                  //            1 -- open APP passcode switch
+              /*      printf("AT+ISCEN\r\n"); 
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200);     
+                  Timer0_Delay1ms(2);  */
+                  
+                  //Broadcast send data
+              /*      putchar(0xAA);
+                  putchar(0xFB);
+                  putchar(0xFF);
+                  putchar(0xFF);
+                  printf("123456789A"); */
+                  //strcpy(Data_Test,"IAMNOTFINEOK");     
+                  //v_Load_Mesh_Send_Data(Instruction_Send,Address_Broadcast,Data_Test);
+                  
+                  //*Data_Test1 = "IAMNOTFINEOK";
+                  //v_Load_Mesh_Send_Data(Instruction_Send,Address_Broadcast,Data_Test1);
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 15  
+
+              
+                  
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  Timer0_Delay1ms(200);     
+                  Timer0_Delay1ms(2); 
+                  
+                  //printf(0x55);
+                  
+                  TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                  //P12 = ~P12;   //In debug mode check UART_BUFFER[u16_CNT] to check receive data
+                  
+                  Timer0_Delay1ms(200);   
+                  Timer0_Delay1ms(2);   
+              }
+              #endif
+ 865          
+ 866          #ifdef BT_MESH_FEATURE_IN
+              UINT8 U8_BT_Connect_Status(void)
+              {
+                if(BT_STAT_PIN)
+                {
+                  return ON;
+                }
+                else
+                {
+                  return OFF;
+                }
+              }
+              #endif
+ 879          
+ 880          static void Var_Init(void)
+ 881          {
+ 882   1        //init variables
+ 883   1        ui_Day_counter = 0;
+ 884   1        uc_Hour_counter = 0;
+ 885   1        uc_Minute_counter = 0;
+ 886   1        uc_Second_counter = 0;
+ 887   1        uc_500ms_counter = 0;
+ 888   1        F_500ms = 0;
+ 889   1        
+ 890   1        auto_test_flag = 0; //default for normal test
+ 891   1        
+ 892   1        uc_AC_Charging_Time_Second = 0;
+ 893   1        uc_AC_Charging_Time_Minute = 0;
+ 894   1        uc_AC_Charging_Time_Hour = 0;
+ 895   1      
+ 896   1      
+ 897   1      #ifdef BT_MESH_FEATURE_IN
+                KEY_AUTO_TEST_STATUS = OFF;
+                KEY_MANUAL_TEST_STATUS = OFF;
+                KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+                
+                SW_S1_STATUS = OFF;
+                SW_S1_STATUS = OFF;
+                SW_S1_STATUS = OFF;
+                SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+              #endif  
+ 907   1              
+ 908   1        //Get a seed for random function from battery voltage
+ 909   1        Enable_ADC_BandGap; //bandgap selected
+ 910   1        clr_ADCF; //clear overflow flag
+ 911   1        set_ADCS; //Start ADC
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 16  
+
+ 912   1        while (ADCS == 1)
+ 913   1        {
+ 914   2          nop;
+ 915   2        }
+ 916   1        Timer0_Delay100us(1);
+ 917   1        srand(((ADCRH<<4) + ADCRL));
+ 918   1        
+ 919   1        uc_AC_Charging_Target_Hour = (24 + rand()%24);
+ 920   1        uc_AC_Charging_Target_Minute = rand()%60;
+ 921   1        uc_AC_Charging_Target_Second = rand()%60;
+ 922   1        
+ 923   1        v_Auto_Test_Detect();
+ 924   1        
+ 925   1        if(auto_test_flag == 1)
+ 926   1        {
+ 927   2          uc_AC_Charging_Target_Hour = 0;
+ 928   2          uc_AC_Charging_Target_Minute = 0;
+ 929   2          uc_AC_Charging_Target_Second = (24 + rand()%24);    
+ 930   2        }
+ 931   1        
+ 932   1        F_Charging_Full = 0;
+ 933   1        
+ 934   1        ui_Duration_Test_Cycle_Day = (358 + rand()%6);
+ 935   1        uc_Duration_Test_Cycle_Hour = rand()%24;
+ 936   1        uc_Duration_Test_Cycle_Minute = rand()%60;
+ 937   1        uc_Duration_Test_Cycle_Second = rand()%60;
+ 938   1        if(auto_test_flag == 1)
+ 939   1        {
+ 940   2          ui_Duration_Test_Cycle_Day = 0;
+ 941   2          uc_Duration_Test_Cycle_Hour = 0;
+ 942   2          uc_Duration_Test_Cycle_Minute = 4;
+ 943   2          uc_Duration_Test_Cycle_Second = rand()%60;    
+ 944   2        }
+ 945   1        
+ 946   1        
+ 947   1        uc_Duration_Test_Time_Second = 0;
+ 948   1        uc_Duration_Test_Time_Minute = 0;
+ 949   1        uc_Duration_Test_Time_Hour = 0;
+ 950   1        uc_Duration_Test_Done = 0;
+ 951   1        
+ 952   1        uc_Emergency_Time_Second = 0;
+ 953   1        uc_Emergency_Time_Minute = 0;
+ 954   1        uc_Emergency_Time_Hour = 0;
+ 955   1        
+ 956   1        uc_Functional_Test_Time_Second = 0;
+ 957   1        uc_Functional_Test_Done = 0;
+ 958   1        
+ 959   1        ui_ms_counter = 0;
+ 960   1        
+ 961   1        led_green_state = OFF;
+ 962   1        led_red_state = OFF;
+ 963   1        
+ 964   1        
+ 965   1        uc_System_State = System_Reset;
+ 966   1        
+ 967   1        AC_Mains_state = OFF;
+ 968   1        
+ 969   1        
+ 970   1        F_Duration_Test_Pending = 1;  //Set Duration_Test_Pending Flag
+ 971   1        F_Mannual_Duration_Test_Pending = 0;
+ 972   1        F_Duration_Test = 0;
+ 973   1        F_Functional_Test = 0;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 17  
+
+ 974   1        
+ 975   1        uc_Battery_Fault_Flag = 0;
+ 976   1        
+ 977   1        Enable_ADC_BandGap; 
+ 978   1        set_ADCS; //Start ADC conversion
+ 979   1        
+ 980   1        F_ADC_Complete = 0;
+ 981   1        F_ADC_All_Channels_Complete = 0;  
+ 982   1        
+ 983   1        U16_Bandgap_Value = U16_Read_Bandgap();
+ 984   1        
+ 985   1        
+ 986   1        
+ 987   1        //UART related variables init
+ 988   1        
+ 989   1        U8_UART_BUS_STATUS = UART_BUS_STATUS_STANDBY;
+ 990   1        U8_UART_TxD_Handle_STATUS = UART_HANDLE_STATUS_STANDBY;
+ 991   1        RxBuffer_read_counter = 0;
+ 992   1        RxBuffer_write_counter = 0;
+ 993   1        TxBuffer_read_counter = 0;
+ 994   1        TxBuffer_write_counter = 0;
+ 995   1        U8_UART_TxD_Handle_ticks_ms = 0;
+ 996   1      }
+ 997          
+ 998          /*********************************************************************************************************
+             -***
+ 999          *    Main function 
+1000          **********************************************************************************************************
+             -**/
+1001          void main (void)
+1002          {
+1003   1        UINT8 i_temp;
+1004   1        UINT8 Data_Test[16] = {"FUCK56789A"};
+1005   1        char* p_temp;
+1006   1      //  UINT8 datatemp;
+1007   1        
+1008   1        
+1009   1        v_init();
+1010   1        
+1011   1        //software version info
+1012   1        printf(SOFTWARE_INFO,"\r\n");
+1013   1        TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+1014   1        Timer0_Delay1ms(10);  
+1015   1      
+1016   1      /*  p_temp = UART_BUFFER;
+1017   1        *UART_BUFFER++ = 'A'; //"What is that??";
+1018   1        *UART_BUFFER++ = 'B'; 
+1019   1        *UART_BUFFER++ = 'C'; 
+1020   1        *UART_BUFFER++ = 'D'; 
+1021   1        //strcpy(UART_BUFFER,"what is that?");
+1022   1        printf("%s\n",UART_BUFFER);
+1023   1        printf(SOFTWARE_INFO,"\r\n");
+1024   1        printf("%s\n",p_temp); */
+1025   1        
+1026   1      /*  *p_temp = UART_BUFFER;
+1027   1        *p_temp = "A";
+1028   1        *p_temp++ = "B";
+1029   1        *p_temp++ = "C";
+1030   1        printf("%s\n",UART_BUFFER); */
+1031   1      
+1032   1      #ifdef BT_MESH_FEATURE_IN 
+                v_BT_Init();
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 18  
+
+              #endif
+1035   1      /*  CHARGE_ENABLE = OFF;
+1036   1        CHARGE_ENABLE = ON;
+1037   1        CHARGE_ENABLE = OFF;
+1038   1        CHARGE_ENABLE = ON; */
+1039   1      
+1040   1        LAMP_CTL = OFF; //Turn Off Q6
+1041   1        LAMP_EN = OFF;    //Disable LAMP */ 
+1042   1      
+1043   1          while(1)
+1044   1          {
+1045   2            if (riflag)
+1046   2            {
+1047   3              //P12 = ~P12;   //In debug mode check UART_BUFFER[u16_CNT] to check receive data
+1048   3              riflag = 0;
+1049   3              //v_UART_BT_Answer_processing();
+1050   3              
+1051   3              if(U8_UART_RxD_Handle() == UART_HANDLE_STATUS_TIME_OUT)
+1052   3              {
+1053   4                printf("UART RxD timeout \r\n");
+1054   4              }
+1055   3              
+1056   3            }
+1057   2            
+1058   2            if(U8_UART_Receive_Pakage_Status == UART_RECEIVE_PACKAGE_COMPLETE)
+1059   2            {
+1060   3              U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_PAUSE;
+1061   3              printf("%s\n",UART_BUFFER);
+1062   3              TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+1063   3              Timer0_Delay1ms(10);
+1064   3            }
+1065   2            
+1066   2            //Timming processing,every 500ms system tick
+1067   2            if(F_500ms)
+1068   2            {
+1069   3              F_500ms = 0;  
+1070   3              uc_500ms_counter++;
+1071   3              if((uc_500ms_counter % 2) == 0)
+1072   3              {         
+1073   4                v_Timming_Processing();
+1074   4                //printf("second = %c\r\n", hextoascii(uc_Second_counter));
+1075   4              }
+1076   3      
+1077   3              //when battery charging status == ON, disconnect charging for 20ms every 3 second,to do battery NC che
+             -ck        
+1078   3              if((uc_500ms_counter % 6) == 0)
+1079   3              {
+1080   4                if(uc_Charging_Status == ON)
+1081   4                {
+1082   5                  U8_Battery_Discharge_ticks_ms = 0;  //reset pulse counter,for No_Battery check 
+1083   5                }                   
+1084   4                //printf("500ms_counter = %c\r\n", hextoascii(uc_500ms_counter));
+1085   4              }
+1086   3              
+1087   3              
+1088   3              printf("System state=0x%c\r\n", hextoascii(uc_System_State));
+1089   3              //printf("Bat vol @MCU = %d\r\n",Battery_Value_mV);
+1090   3              printf("VCC @MCU = %d\r\n",ADC_to_AIN_mV(0xFFF));
+1091   3      #ifdef BT_MESH_FEATURE_IN       
+              /*        if(U8_BT_Connect_Status() == ON)
+                      {
+                        PWRC_TRANS_MODE;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 19  
+
+                        printf("I am connected\r\n");
+                        TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                        Timer0_Delay1ms(10);
+                      } */
+                      
+                      //if both auto-test & manual test button is pressed
+                      if((KEY_AUTO_TEST_STATUS == ON) && (KEY_MANUAL_TEST_STATUS == ON))
+                      {
+                        //SET BT name
+                        //Response:+OK
+                        PWRC_AT_INSTRUCTION_MODE;
+                        printf("AT+NAMEI am in Group-%x",U8_SW_3_BITS_SENSE(),"\r\n");  
+                        TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                        Timer0_Delay1ms(100);     
+              
+                        //Querry BT name
+                        //Response:+NAME=<BT name>
+                          printf("AT+NAME\r\n");
+                        TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                        Timer0_Delay1ms(100); 
+              
+                        while(U8_UART_Receive_Pakage_Status != UART_RECEIVE_PACKAGE_COMPLETE)
+                        {
+                          v_UART_BT_Answer_processing();
+                          U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_PAUSE;
+                          
+                        }
+                        printf("%s",UART_BUFFER);
+                        TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+                        Timer0_Delay1ms(10); 
+                      }
+              #endif        
+1127   3            }   
+1128   2            
+1129   2            //every 1ms
+1130   2            if(F_1ms)
+1131   2            {
+1132   3              F_1ms = 0;
+1133   3      
+1134   3            
+1135   3              v_LED_Operation();        
+1136   3              v_Battery_Charging_Operation();
+1137   3              v_AC_Mains_Detection();     
+1138   3              v_State_Machine_Processing();
+1139   3              
+1140   3              U8_UART_TxD_Handle_ticks_ms++;
+1141   3              U8_Battery_Discharge_ticks_ms++;
+1142   3      
+1143   3            }
+1144   2            
+1145   2            //around every 26.6K sampling rate
+1146   2            //run once every 38us
+1147   2            if(F_ADC_Complete)
+1148   2            {
+1149   3              F_ADC_Complete = 0;
+1150   3              v_ADC_process();
+1151   3            }
+1152   2            
+1153   2            //All ADC channels sampling complete, around every ... ms
+1154   2            if(F_ADC_All_Channels_Complete)
+1155   2            {
+1156   3              F_ADC_All_Channels_Complete = 0;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 20  
+
+1157   3              
+1158   3              Load_Test_Proc();
+1159   3              Battery_Test_Proc();
+1160   3              
+1161   3              v_KEY_AUTO_MANUAL_SENSE();
+1162   3              i_temp = U8_SW_3_BITS_SENSE();
+1163   3      
+1164   3      /*          printf("\n Bandgap=0x%x",Bandgap_Value);
+1165   3              printf("\n Battery=0x%x",Battery_Value);
+1166   3              printf("\n Load=0x%x",Load_Value);
+1167   3              printf("\n 3bits sw=0x%x",SW_3_bits_Value);
+1168   3              printf("\n KEY_Auto_Manual=0x%x",KEY_Auto_Manual_Value);
+1169   3              printf("\n KEY_Auto=%c",hextoascii(KEY_AUTO_TEST_STATUS));
+1170   3              printf("\n KEY_Manual=%c",hextoascii(KEY_MANUAL_TEST_STATUS));
+1171   3              printf("\n SW_S1=%c",hextoascii(SW_S1_STATUS));
+1172   3              printf("\n SW_S2=%c",hextoascii(SW_S2_STATUS));
+1173   3              printf("\n SW_S3=%c",hextoascii(SW_S3_STATUS));  */
+1174   3        
+1175   3            }
+1176   2            
+1177   2            
+1178   2            //UART Handle
+1179   2            if(U8_UART_TxD_Handle_ticks_ms == UART_TxD_HANDLE_CYCLE_MS)
+1180   2            {
+1181   3              U8_UART_TxD_Handle_ticks_ms = 0;  //reset
+1182   3              
+1183   3              //printf("\r\n I am alive");
+1184   3              
+1185   3              if(U8_UART_TxD_Handle() == UART_HANDLE_STATUS_TIME_OUT)
+1186   3              {
+1187   4                TI = 1;
+1188   4              }
+1189   3            }
+1190   2            
+1191   2      
+1192   2      
+1193   2            //strcpy(Data_Test,"IAMNOTFINEOK");     
+1194   2            //v_Load_Mesh_Send_Data(Instruction_Send,Address_Broadcast,Data_Test);
+1195   2      
+1196   2            
+1197   2            //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+1198   2            //Timer0_Delay1ms(200);     
+1199   2            //Timer0_Delay1ms(2); 
+1200   2            
+1201   2            
+1202   2            //putchar(0x55);
+1203   2            
+1204   2            //TI = 1; //Triggering UART buffer sending process ... for putchar() & Printf()
+1205   2            //P12 = ~P12;   //In debug mode check UART_BUFFER[u16_CNT] to check receive data
+1206   2            
+1207   2            //Timer0_Delay1ms(20);    
+1208   2            //Timer0_Delay1ms(2);   
+1209   2          }
+1210   1        
+1211   1      }
+*** WARNING C280 IN LINE 1005 OF Source\main.c: 'p_temp': unreferenced local variable
+1212          static void v_Timming_Processing(void)
+1213          {
+1214   1        //every second,system time update
+1215   1        
+1216   1        //system_save_data();
+1217   1        
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 21  
+
+1218   1        uc_Second_counter++;
+1219   1        if(uc_Second_counter >= 60)
+1220   1        {
+1221   2          uc_Second_counter = 0;
+1222   2          
+1223   2          //Every Minute
+1224   2          uc_Minute_counter++;
+1225   2          if(uc_Minute_counter >= 60)
+1226   2          {
+1227   3            uc_Minute_counter = 0;
+1228   3            
+1229   3            //Every Hour
+1230   3            uc_Hour_counter++;
+1231   3            if(uc_Hour_counter >= 24)
+1232   3            {
+1233   4              uc_Hour_counter = 0;
+1234   4              
+1235   4              //Every Day
+1236   4              //Reset every 364days = 52weeks
+1237   4              ui_Day_counter++;
+1238   4              if(ui_Day_counter >= 364)
+1239   4              {
+1240   5                ui_Day_counter = 0;
+1241   5                
+1242   5                  //re-configure a random time for next duration test
+1243   5                  ui_Duration_Test_Cycle_Day = (358 + rand()%6);
+1244   5                  uc_Duration_Test_Cycle_Hour = rand()%24;
+1245   5                  uc_Duration_Test_Cycle_Minute = rand()%60;
+1246   5                  uc_Duration_Test_Cycle_Second = rand()%60;
+1247   5              }
+1248   4            }
+1249   3          }
+1250   2          if(auto_test_flag == 1) //Auto_testing mode,every 5 minutes reset system time
+1251   2          {
+1252   3            if(uc_Minute_counter >= 5)
+1253   3            {
+1254   4              uc_Minute_counter = 0;
+1255   4              //re-configure a random time for next duration test
+1256   4              ui_Duration_Test_Cycle_Day = 0;
+1257   4              uc_Duration_Test_Cycle_Hour = 0;
+1258   4              uc_Duration_Test_Cycle_Minute = 4;
+1259   4              uc_Duration_Test_Cycle_Second = rand()%60;        
+1260   4            }
+1261   3          }
+1262   2        } 
+1263   1        //Random time for Duration test
+1264   1        if((ui_Day_counter == ui_Duration_Test_Cycle_Day)
+1265   1          && (uc_Hour_counter == uc_Duration_Test_Cycle_Hour)
+1266   1            && (uc_Minute_counter == uc_Duration_Test_Cycle_Minute)
+1267   1              &&(uc_Second_counter == uc_Duration_Test_Cycle_Second))
+1268   1              {
+1269   2                F_Duration_Test = 1;
+1270   2              }
+1271   1        
+1272   1        //to Functional_Test, every week
+1273   1        if(((ui_Day_counter % 7) == 6) 
+1274   1          && (uc_Hour_counter == 23)
+1275   1            &&(uc_Minute_counter == 59)
+1276   1              &&(uc_Second_counter == 59))
+1277   1              {
+1278   2                F_Functional_Test = 1;
+1279   2              }
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 22  
+
+1280   1        //auto test mode,every 1 minute
+1281   1        if((auto_test_flag == 1) && (uc_Second_counter == 59))
+1282   1        {
+1283   2          F_Functional_Test = 1;
+1284   2        }
+1285   1        
+1286   1        
+1287   1        //AC_Charging time update
+1288   1        if(uc_System_State == AC_Charging)
+1289   1        {
+1290   2          //every second,AC_Charging time update
+1291   2          uc_AC_Charging_Time_Second++;
+1292   2          if(uc_AC_Charging_Time_Second >= 60)
+1293   2          {
+1294   3            uc_AC_Charging_Time_Second = 0;
+1295   3            
+1296   3            //Every Minute
+1297   3            uc_AC_Charging_Time_Minute++;
+1298   3            if(uc_AC_Charging_Time_Minute >= 60)
+1299   3            {
+1300   4              uc_AC_Charging_Time_Minute = 0;
+1301   4              
+1302   4              //Every Hour
+1303   4              uc_AC_Charging_Time_Hour++;
+1304   4              if(uc_AC_Charging_Time_Hour >= 48)
+1305   4              {
+1306   5                uc_AC_Charging_Time_Hour = 48;    //48 hours max
+1307   5              }
+1308   4            }
+1309   3          }
+1310   2      
+1311   2          if((uc_AC_Charging_Time_Hour == uc_AC_Charging_Target_Hour)
+1312   2            && (uc_AC_Charging_Time_Minute == uc_AC_Charging_Target_Minute)
+1313   2              && (uc_AC_Charging_Time_Second == uc_AC_Charging_Target_Second))
+1314   2          {
+1315   3            F_Charging_Full = 1;        
+1316   3          }       
+1317   2        }
+1318   1        
+1319   1        //Duration_Test time update
+1320   1        if((uc_System_State == Duration_Test) || (uc_System_State == Emergency_Operation))
+1321   1        {
+1322   2          //every second,Duration_Test time update
+1323   2          uc_Duration_Test_Time_Second++;
+1324   2          if(uc_Duration_Test_Time_Second >= 60)
+1325   2          {
+1326   3            uc_Duration_Test_Time_Second = 0;
+1327   3            
+1328   3            //Every Minute
+1329   3            uc_Duration_Test_Time_Minute++;
+1330   3            if(uc_Duration_Test_Time_Minute >= 60)
+1331   3            {
+1332   4              uc_Duration_Test_Time_Minute = 0;
+1333   4              
+1334   4              //Every Hour
+1335   4              uc_Duration_Test_Time_Hour++;
+1336   4              if(uc_Duration_Test_Time_Hour >= 3)
+1337   4              {
+1338   5                uc_Duration_Test_Time_Hour = 3;   //Max 3 hours
+1339   5                uc_Duration_Test_Done = 1;
+1340   5              }
+1341   4            }
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 23  
+
+1342   3          }
+1343   2          //Auto-testing mode,30 seconds instead of 3 hours
+1344   2          if((auto_test_flag == 1) && (uc_Duration_Test_Time_Second >= 30))
+1345   2          {
+1346   3            uc_Duration_Test_Done = 1;
+1347   3          }     
+1348   2        }   
+1349   1        
+1350   1        //Emergency operation time update
+1351   1        if(uc_System_State == Emergency_Operation)
+1352   1        {
+1353   2          //every second,Emergency_Operation time update
+1354   2          uc_Emergency_Time_Second++;
+1355   2          if(uc_Emergency_Time_Second >= 60)
+1356   2          {
+1357   3            uc_Emergency_Time_Second = 0;
+1358   3            
+1359   3            //Every Minute
+1360   3            uc_Emergency_Time_Minute++;
+1361   3            if(uc_Emergency_Time_Minute >= 60)
+1362   3            {
+1363   4              uc_Emergency_Time_Minute = 0;
+1364   4              
+1365   4              //Every Hour
+1366   4              uc_Emergency_Time_Hour++;
+1367   4              if(uc_Emergency_Time_Hour >= 250)
+1368   4              {
+1369   5                uc_Emergency_Time_Hour = 250;   //Max 250 hours
+1370   5              }
+1371   4            }
+1372   3          }     
+1373   2        }
+1374   1      
+1375   1        //Functional_Test time update
+1376   1        if(uc_System_State == Functional_Test)
+1377   1        {
+1378   2          //functional test period 108 seconds
+1379   2          uc_Functional_Test_Time_Second++;
+1380   2          if(uc_Functional_Test_Time_Second >= 108)
+1381   2          {
+1382   3            uc_Functional_Test_Done = 1;
+1383   3          }
+1384   2          //Auto-testing mode,10 seconds instead of 108 seconds
+1385   2          if((auto_test_flag == 1) && (uc_Functional_Test_Time_Second >= 10))
+1386   2          {
+1387   3            uc_Functional_Test_Done = 1;
+1388   3          }       
+1389   2        }     
+1390   1      }
+1391          
+1392          static void v_Auto_Test_Detect(void)
+1393          {   
+1394   1        if(KEY_AUTO_TEST == 0)
+1395   1        {
+1396   2          clear_flash();    //to be added,2019_05_27
+1397   2          auto_test_flag = 1; //set auto test flag, for quick testing
+1398   2        }
+1399   1        
+1400   1        //Allow system to be in quick test mode by pressing the manual testing button during power on
+1401   1        if(KEY_MANUAL_TEST == 0)
+1402   1        {
+1403   2          clear_flash();  //to be added,2019_05_27
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 24  
+
+1404   2          auto_test_flag = 1; //set auto test flag, for quick testing
+1405   2        } 
+1406   1        
+1407   1        //to avoid possible mixup of manual testing function, button has to be released once
+1408   1        ui_Key_Pressed_ms_counter = 0;  
+1409   1        while(ui_Key_Pressed_ms_counter <= 100)
+1410   1        {
+1411   2          if(KEY_MANUAL_TEST == 0)
+1412   2          {
+1413   3            ui_Key_Pressed_ms_counter = 0;
+1414   3          }
+1415   2          else
+1416   2          {
+1417   3            ui_Key_Pressed_ms_counter++;
+1418   3          }
+1419   2        }
+1420   1      }
+1421          
+1422          //function not yet tested
+1423          static void v_Key_Detection(void)
+1424          {
+1425   1      #ifdef EMERGENCY_LAMP_SINGLE_BATTERY  
+1426   1        {
+1427   2          //Key pressed
+1428   2          if(KEY_MANUAL_TEST == 0)
+1429   2          {
+1430   3            ui_Key_Pressed_ms_counter++;
+1431   3            if(ui_Key_Pressed_ms_counter >= 10000)
+1432   3            {
+1433   4              ui_Key_Pressed_ms_counter = 10000;    //Max 10 seconds count
+1434   4            }
+1435   3          }
+1436   2          else
+1437   2          {
+1438   3            if ((ui_Key_Pressed_ms_counter >= 5000) && (ui_Key_Pressed_ms_counter <= 10000))  ////longer than 5 seco
+             -nds but less than 10 seconds pressed, set Manual_Duration_Test
+1439   3            //if(ui_Key_Pressed_ms_counter >= 3000) //>3 seconds pressed, set Manual_Duration_Test
+1440   3            {
+1441   4              F_Mannual_Duration_Test_Pending = 1;
+1442   4      
+1443   4            }
+1444   3            else if ((ui_Key_Pressed_ms_counter >= 1000) && (ui_Key_Pressed_ms_counter <= 2000))  //pressed longer t
+             -han 1 second but less than 2 seconds
+1445   3            {
+1446   4              //Get into functional test
+1447   4              F_Functional_Test = 1;
+1448   4            }
+1449   3            
+1450   3            ui_Key_Pressed_ms_counter = 0;
+1451   3          }
+1452   2        }
+1453   1      #endif
+1454   1      
+1455   1      #ifdef BT_MESH_FEATURE_IN
+                {
+                  UINT16 temph = 0;
+              //    temph = Bandgap_Calibrate(KEY_AUTO_MANUAL_REF1_0_01V,KEY_AUTO_MANUAL_REF1_0_01V);
+              //    temph = temph + Bandgap_Calibrate(0,TOLERANCE_SENSING_0_01V); //0.05V tolerance added
+                }
+              #endif
+1462   1        
+1463   1      }
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 25  
+
+1464          
+1465          
+1466          static void v_KEY_AUTO_MANUAL_SENSE(void)
+1467          {
+1468   1      #ifdef BT_MESH_FEATURE_IN
+              
+                UINT16 temph = 0;
+                
+                //compare with average value of ref1 & ref2
+                temph = (Bandgap_Calibrate(KEY_AUTO_MANUAL_REF1_1V,KEY_AUTO_MANUAL_REF1_0_01V) 
+                    + Bandgap_Calibrate(KEY_AUTO_MANUAL_REF2_1V,KEY_AUTO_MANUAL_REF2_0_01V));
+                temph = (temph >> 1); 
+                if(KEY_Auto_Manual_Value <= temph)
+                {
+                  if((KEY_AUTO_TEST_STATUS == ON) && (KEY_MANUAL_TEST_STATUS == ON))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((KEY_AUTO_TEST_STATUS_TMP == ON) && (KEY_MANUAL_TEST_STATUS_TMP == ON))
+                    {
+                      KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER ++;
+                      if(KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        KEY_AUTO_TEST_STATUS = ON;
+                        KEY_MANUAL_TEST_STATUS = ON;
+                        KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      KEY_AUTO_TEST_STATUS_TMP = ON;
+                      KEY_MANUAL_TEST_STATUS_TMP = ON;
+                      KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return;
+                }
+              
+                //compare with average value of ref2 & ref3
+                temph = (Bandgap_Calibrate(KEY_AUTO_MANUAL_REF2_1V,KEY_AUTO_MANUAL_REF2_0_01V) 
+                    + Bandgap_Calibrate(KEY_AUTO_MANUAL_REF3_1V,KEY_AUTO_MANUAL_REF3_0_01V));
+                temph = (temph >> 1); 
+                if(KEY_Auto_Manual_Value <= temph)
+                {
+                  if((KEY_AUTO_TEST_STATUS == ON) && (KEY_MANUAL_TEST_STATUS == OFF))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((KEY_AUTO_TEST_STATUS_TMP == ON) && (KEY_MANUAL_TEST_STATUS_TMP == OFF))
+                    {
+                      KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER ++;
+                      if(KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        KEY_AUTO_TEST_STATUS = ON;
+                        KEY_MANUAL_TEST_STATUS = OFF;
+                        KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+                      }
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 26  
+
+                    }
+                    else
+                    {
+                      KEY_AUTO_TEST_STATUS_TMP = ON;
+                      KEY_MANUAL_TEST_STATUS_TMP = OFF;
+                      KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return;
+                }
+              
+              
+                //compare with average value of ref3 & 3.3 (full scale)
+                temph = (Bandgap_Calibrate(KEY_AUTO_MANUAL_REF3_1V,KEY_AUTO_MANUAL_REF3_0_01V) 
+                    + Bandgap_Calibrate(3,3));
+                temph = (temph >> 1); 
+                if(KEY_Auto_Manual_Value <= temph)
+                {
+                  if((KEY_AUTO_TEST_STATUS == OFF) && (KEY_MANUAL_TEST_STATUS == ON))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((KEY_AUTO_TEST_STATUS_TMP == OFF) && (KEY_MANUAL_TEST_STATUS_TMP == ON))
+                    {
+                      KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER ++;
+                      if(KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        KEY_AUTO_TEST_STATUS = OFF;
+                        KEY_MANUAL_TEST_STATUS = ON;
+                        KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      KEY_AUTO_TEST_STATUS_TMP = OFF;
+                      KEY_MANUAL_TEST_STATUS_TMP = ON;
+                      KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return;
+                }
+                //check if both OFF 
+                else
+                {
+                  if((KEY_AUTO_TEST_STATUS == OFF) && (KEY_MANUAL_TEST_STATUS == OFF))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((KEY_AUTO_TEST_STATUS_TMP == OFF) && (KEY_MANUAL_TEST_STATUS_TMP == OFF))
+                    {
+                      KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER ++;
+                      if(KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        KEY_AUTO_TEST_STATUS = OFF;
+                        KEY_MANUAL_TEST_STATUS = OFF;
+                        KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 27  
+
+                      }
+                    }
+                    else
+                    {
+                      KEY_AUTO_TEST_STATUS_TMP = OFF;
+                      KEY_MANUAL_TEST_STATUS_TMP = OFF;
+                      KEY_AUTO_MANUAL_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return;   
+                }
+              
+              #endif
+1602   1      }
+1603          
+1604          
+1605          static UINT8 U8_SW_3_BITS_SENSE()
+1606          {
+1607   1      #ifdef BT_MESH_FEATURE_IN
+                UINT16 temph = 0;
+                
+                //compare with average value of ref1 & ref2
+                temph = (Bandgap_Calibrate(SW_3_BITS_REF1_1V,SW_3_BITS_REF1_0_01V) 
+                    + Bandgap_Calibrate(SW_3_BITS_REF2_1V,SW_3_BITS_REF2_0_01V));
+                temph = (temph >> 1); 
+                if(SW_3_bits_Value <= temph)
+                {
+                  if((SW_S1_STATUS == ON) && (SW_S2_STATUS == ON) && (SW_S3_STATUS == ON))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((SW_S1_STATUS_TMP == ON) && (SW_S2_STATUS_TMP == ON) && (SW_S3_STATUS_TMP == ON))
+                    {
+                      SW_3_BITS_SENSING_FILTER_CUNTER ++;
+                      if(SW_3_BITS_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        SW_S1_STATUS = ON;
+                        SW_S2_STATUS = ON;
+                        SW_S3_STATUS = ON;
+                        SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      SW_S1_STATUS_TMP = ON;
+                      SW_S2_STATUS_TMP = ON;
+                      SW_S3_STATUS_TMP = ON;
+                      SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return  0x07; //BT Group -7
+                }
+              
+                //compare with average value of ref2 & ref3
+                temph = (Bandgap_Calibrate(SW_3_BITS_REF2_1V,SW_3_BITS_REF2_0_01V) 
+                    + Bandgap_Calibrate(SW_3_BITS_REF3_1V,SW_3_BITS_REF3_0_01V));
+                temph = (temph >> 1); 
+                if(SW_3_bits_Value <= temph)
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 28  
+
+                {
+                  if((SW_S1_STATUS == ON) && (SW_S2_STATUS == ON) && (SW_S3_STATUS == OFF))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((SW_S1_STATUS_TMP == ON) && (SW_S2_STATUS_TMP == ON) && (SW_S3_STATUS_TMP == OFF))
+                    {
+                      SW_3_BITS_SENSING_FILTER_CUNTER ++;
+                      if(SW_3_BITS_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        SW_S1_STATUS = ON;
+                        SW_S2_STATUS = ON;
+                        SW_S3_STATUS = OFF;
+                        SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      SW_S1_STATUS_TMP = ON;
+                      SW_S2_STATUS_TMP = ON;
+                      SW_S3_STATUS_TMP = OFF;
+                      SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return  0x06; //BT Group -6
+                }   
+                
+                //compare with average value of ref3 & ref4
+                temph = (Bandgap_Calibrate(SW_3_BITS_REF3_1V,SW_3_BITS_REF3_0_01V) 
+                    + Bandgap_Calibrate(SW_3_BITS_REF4_1V,SW_3_BITS_REF4_0_01V));
+                temph = (temph >> 1); 
+                if(SW_3_bits_Value <= temph)
+                {
+                  if((SW_S1_STATUS == ON) && (SW_S2_STATUS == OFF) && (SW_S3_STATUS == ON))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((SW_S1_STATUS_TMP == ON) && (SW_S2_STATUS_TMP == OFF) && (SW_S3_STATUS_TMP == ON))
+                    {
+                      SW_3_BITS_SENSING_FILTER_CUNTER ++;
+                      if(SW_3_BITS_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        SW_S1_STATUS = ON;
+                        SW_S2_STATUS = OFF;
+                        SW_S3_STATUS = ON;
+                        SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      SW_S1_STATUS_TMP = ON;
+                      SW_S2_STATUS_TMP = OFF;
+                      SW_S3_STATUS_TMP = ON;
+                      SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 29  
+
+                  return  0x05; //BT Group -5
+                } 
+                
+                //compare with average value of ref4 & ref5
+                temph = (Bandgap_Calibrate(SW_3_BITS_REF4_1V,SW_3_BITS_REF4_0_01V) 
+                    + Bandgap_Calibrate(SW_3_BITS_REF5_1V,SW_3_BITS_REF5_0_01V));
+                temph = (temph >> 1); 
+                if(SW_3_bits_Value <= temph)
+                {
+                  if((SW_S1_STATUS == ON) && (SW_S2_STATUS == OFF) && (SW_S3_STATUS == OFF))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((SW_S1_STATUS_TMP == ON) && (SW_S2_STATUS_TMP == OFF) && (SW_S3_STATUS_TMP == OFF))
+                    {
+                      SW_3_BITS_SENSING_FILTER_CUNTER ++;
+                      if(SW_3_BITS_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        SW_S1_STATUS = ON;
+                        SW_S2_STATUS = OFF;
+                        SW_S3_STATUS = OFF;
+                        SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      SW_S1_STATUS_TMP = ON;
+                      SW_S2_STATUS_TMP = OFF;
+                      SW_S3_STATUS_TMP = OFF;
+                      SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return  0x04; //BT Group -4
+                } 
+                
+                //compare with average value of ref5 & ref6
+                temph = (Bandgap_Calibrate(SW_3_BITS_REF5_1V,SW_3_BITS_REF5_0_01V) 
+                    + Bandgap_Calibrate(SW_3_BITS_REF6_1V,SW_3_BITS_REF6_0_01V));
+                temph = (temph >> 1); 
+                if(SW_3_bits_Value <= temph)
+                {
+                  if((SW_S1_STATUS == OFF) && (SW_S2_STATUS == ON) && (SW_S3_STATUS == ON))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((SW_S1_STATUS_TMP == OFF) && (SW_S2_STATUS_TMP == ON) && (SW_S3_STATUS_TMP == ON))
+                    {
+                      SW_3_BITS_SENSING_FILTER_CUNTER ++;
+                      if(SW_3_BITS_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        SW_S1_STATUS = OFF;
+                        SW_S2_STATUS = ON;
+                        SW_S3_STATUS = ON;
+                        SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 30  
+
+                    {
+                      SW_S1_STATUS_TMP = OFF;
+                      SW_S2_STATUS_TMP = ON;
+                      SW_S3_STATUS_TMP = ON;
+                      SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return  0x03; //BT Group -3
+                }   
+                
+                //compare with average value of ref6 & ref7
+                temph = (Bandgap_Calibrate(SW_3_BITS_REF6_1V,SW_3_BITS_REF6_0_01V) 
+                    + Bandgap_Calibrate(SW_3_BITS_REF7_1V,SW_3_BITS_REF7_0_01V));
+                temph = (temph >> 1); 
+                if(SW_3_bits_Value <= temph)
+                {
+                  if((SW_S1_STATUS == OFF) && (SW_S2_STATUS == ON) && (SW_S3_STATUS == OFF))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((SW_S1_STATUS_TMP == OFF) && (SW_S2_STATUS_TMP == ON) && (SW_S3_STATUS_TMP == OFF))
+                    {
+                      SW_3_BITS_SENSING_FILTER_CUNTER ++;
+                      if(SW_3_BITS_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        SW_S1_STATUS = OFF;
+                        SW_S2_STATUS = ON;
+                        SW_S3_STATUS = OFF;
+                        SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      SW_S1_STATUS_TMP = OFF;
+                      SW_S2_STATUS_TMP = ON;
+                      SW_S3_STATUS_TMP = OFF;
+                      SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return  0x02; //BT Group -2
+                }   
+                
+                //compare with average value of ref7 & 3.3V
+                temph = (Bandgap_Calibrate(SW_3_BITS_REF7_1V,SW_3_BITS_REF7_0_01V) 
+                    + Bandgap_Calibrate(3,3));
+                temph = (temph >> 1); 
+                if(SW_3_bits_Value <= temph)
+                {
+                  if((SW_S1_STATUS == OFF) && (SW_S2_STATUS == OFF) && (SW_S3_STATUS == ON))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((SW_S1_STATUS_TMP == OFF) && (SW_S2_STATUS_TMP == OFF) && (SW_S3_STATUS_TMP == ON))
+                    {
+                      SW_3_BITS_SENSING_FILTER_CUNTER ++;
+                      if(SW_3_BITS_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 31  
+
+                      {
+                        SW_S1_STATUS = OFF;
+                        SW_S2_STATUS = OFF;
+                        SW_S3_STATUS = ON;
+                        SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      SW_S1_STATUS_TMP = OFF;
+                      SW_S2_STATUS_TMP = OFF;
+                      SW_S3_STATUS_TMP = ON;
+                      SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return  0x01; //BT Group -1
+                }
+                //check if all OFF
+                else
+                {
+                  if((SW_S1_STATUS == OFF) && (SW_S2_STATUS == OFF) && (SW_S3_STATUS == OFF))
+                  {
+                    
+                  }
+                  else
+                  {
+                    if((SW_S1_STATUS_TMP == OFF) && (SW_S2_STATUS_TMP == OFF) && (SW_S3_STATUS_TMP == OFF))
+                    {
+                      SW_3_BITS_SENSING_FILTER_CUNTER ++;
+                      if(SW_3_BITS_SENSING_FILTER_CUNTER >= KEY_SENSE_FILTER)
+                      {
+                        SW_S1_STATUS = OFF;
+                        SW_S2_STATUS = OFF;
+                        SW_S3_STATUS = OFF;
+                        SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                      }
+                    }
+                    else
+                    {
+                      SW_S1_STATUS_TMP = OFF;
+                      SW_S2_STATUS_TMP = OFF;
+                      SW_S3_STATUS_TMP = OFF;
+                      SW_3_BITS_SENSING_FILTER_CUNTER = 0;
+                    }
+                  }
+                  
+                  return  0x00; //BT Group -0 
+                }
+              #endif  
+1886   1        return 0x00;
+1887   1      }
+1888          
+1889          //This function block is not yet tested @2019_05_27, due to error on GPIO (P11)
+1890          static void v_AC_Mains_Detection(void)
+1891          {
+1892   1        if(AC_Mains_state == OFF)
+1893   1        {
+1894   2          if(AC_MAIN_DETECT == OFF) //AC OFF
+1895   2          {
+1896   3            uc_AC_Mains_State_ms_counter = 0;
+1897   3          }
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 32  
+
+1898   2          else
+1899   2          {
+1900   3            uc_AC_Mains_State_ms_counter++;
+1901   3            if(uc_AC_Mains_State_ms_counter >= 10)  //10ms filter
+1902   3            {
+1903   4              uc_AC_Mains_State_ms_counter = 10;
+1904   4              AC_Mains_state = ON;
+1905   4              
+1906   4              LAMP_CTL = OFF; //Turn off Q6       
+1907   4            }
+1908   3          }
+1909   2        }
+1910   1        
+1911   1        if(AC_Mains_state == ON)
+1912   1        {
+1913   2          if(AC_MAIN_DETECT == OFF) //AC OFF
+1914   2          {
+1915   3            uc_AC_Mains_State_ms_counter++;
+1916   3            if(uc_AC_Mains_State_ms_counter >= 10)  //10ms filter
+1917   3            {
+1918   4              uc_AC_Mains_State_ms_counter = 10;
+1919   4              AC_Mains_state = OFF;
+1920   4      
+1921   4              LAMP_CTL = ON;  //Turn ON Q6        
+1922   4            }     
+1923   3          }
+1924   2          else
+1925   2          {
+1926   3            uc_AC_Mains_State_ms_counter = 0;
+1927   3          }
+1928   2        } 
+1929   1      }
+1930          
+1931          static void v_Battery_Charging_Operation(void)
+1932          {
+1933   1        switch (uc_Charging_Status)
+1934   1        {
+1935   2          case ON:
+1936   2            if(U8_Battery_Discharge_ticks_ms <= Battery_NC_Check_Discharge_Ticks_ms)
+1937   2            {
+1938   3              CHARGE_ENABLE = OFF;
+1939   3            }
+1940   2            else
+1941   2            {
+1942   3              if(Battery_Fully_Charged == 0)
+1943   3              {
+1944   4                CHARGE_ENABLE = ON;
+1945   4              }
+1946   3              else
+1947   3              {
+1948   4                CHARGE_ENABLE = OFF;
+1949   4              }
+1950   3            }
+1951   2          break;
+1952   2          
+1953   2          case OFF:
+1954   2            CHARGE_ENABLE = OFF;
+1955   2          break;
+1956   2          
+1957   2          default:
+1958   2            CHARGE_ENABLE = ON;
+1959   2          break;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 33  
+
+1960   2        }
+1961   1      }
+1962          
+1963          static void v_LED_Operation(void)
+1964          {
+1965   1        //GPIO_WriteReverse(LED_RED_PORT, LED_RED_PIN);
+1966   1        #if 1
+1967   1        ui_ms_counter++;
+1968   1        if(ui_ms_counter>=1000)
+1969   1        {
+1970   2          ui_ms_counter = 0;
+1971   2        } 
+1972   1        
+1973   1        //Green LED operation
+1974   1        switch(led_green_state)
+1975   1        {
+1976   2          case OFF:
+1977   2            GREEN_LED_PIN_LOW;
+1978   2          break;
+1979   2          case ON:
+1980   2            GREEN_LED_PIN_HIGH;
+1981   2          break;    
+1982   2          case Flashing_Slow:
+1983   2            if((ui_ms_counter % 500) == 0)
+1984   2            {
+1985   3              GREEN_LED_PIN_TOGGLE;
+1986   3            }
+1987   2          break;
+1988   2          case Flashing_Medium:
+1989   2            if((ui_ms_counter % 250) == 0)
+1990   2            {
+1991   3              GREEN_LED_PIN_TOGGLE;
+1992   3            }
+1993   2          break;
+1994   2          case Flashing_Fast:
+1995   2            if((ui_ms_counter % 125) == 0)
+1996   2            {
+1997   3              GREEN_LED_PIN_TOGGLE;
+1998   3            }
+1999   2          break;
+2000   2          default:
+2001   2            GREEN_LED_PIN_LOW;
+2002   2          break;        
+2003   2        }
+2004   1      
+2005   1        //Red LED operation
+2006   1        switch(led_red_state)
+2007   1        {
+2008   2          case OFF:
+2009   2            RED_LED_PIN_LOW;
+2010   2          break;
+2011   2          case ON:
+2012   2            RED_LED_PIN_HIGH;
+2013   2          break;    
+2014   2          case Flashing_Slow:
+2015   2            if((ui_ms_counter % 500) == 0)
+2016   2            {
+2017   3              RED_LED_PIN_TOGGLE;
+2018   3            }
+2019   2          break;
+2020   2          case Flashing_Medium:
+2021   2            if((ui_ms_counter % 250) == 0)
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 34  
+
+2022   2            {
+2023   3              RED_LED_PIN_TOGGLE;
+2024   3            }
+2025   2          break;
+2026   2          case Flashing_Fast:
+2027   2            if((ui_ms_counter % 125) == 0)
+2028   2            {
+2029   3              RED_LED_PIN_TOGGLE;
+2030   3            }
+2031   2          break;
+2032   2          default:
+2033   2            RED_LED_PIN_LOW;
+2034   2          break;        
+2035   2        } 
+2036   1      #endif
+2037   1      }
+2038          
+2039          static void v_State_Machine_Processing(void)
+2040          {
+2041   1        switch(uc_System_State)
+2042   1        {
+2043   2          case System_Reset:
+2044   2          {
+2045   3            F_Duration_Test_Pending = 1;
+2046   3            
+2047   3            //LED states
+2048   3            led_green_state = OFF;
+2049   3            led_red_state = OFF;
+2050   3            
+2051   3            uc_Charging_Status = ON;    //Charging allowed
+2052   3            LAMP_CTL = OFF; //Turn Off Q6
+2053   3            LAMP_EN = OFF;    //Disable LAMP */     
+2054   3            
+2055   3            //State transition
+2056   3            if(AC_Mains_state == ON)
+2057   3            {
+2058   4              uc_System_State = Reset_Charging_Time;    
+2059   4            }
+2060   3          } 
+2061   2          break;
+2062   2      
+2063   2          case AC_Charging:
+2064   2          {
+2065   3            //LED states
+2066   3            if(F_Mannual_Duration_Test_Pending == 1)
+2067   3            {
+2068   4              led_green_state = Flashing_Slow;
+2069   4              led_red_state = OFF;  //Overwrite RED LED
+2070   4            }
+2071   3            else if(led_red_state == OFF) //fault indication overwrites others...
+2072   3            {
+2073   4              if(F_Duration_Test_Pending == 1)
+2074   4              {
+2075   5                led_green_state = Flashing_Slow;
+2076   5              }
+2077   4            }
+2078   3            else
+2079   3            {
+2080   4              led_green_state = OFF;
+2081   4            } 
+2082   3      
+2083   3      
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 35  
+
+2084   3            
+2085   3      /*      GPIO_WriteHigh(CHG_ENABLE_PORT, CHG_ENABLE_PIN);  //Charging allowed
+2086   3            GPIO_WriteLow(LAMP_CONTROL_PORT, LAMP_CONTROL_PIN); //Turn Off Q6
+2087   3            GPIO_WriteLow(LAMP_EN_PORT, LAMP_EN_PIN);   //Disable LAMP */
+2088   3            uc_Charging_Status = ON;    //Charging allowed
+2089   3            LAMP_CTL = OFF; //Turn Off Q6
+2090   3            LAMP_EN = OFF;    //Disable LAMP */
+2091   3            F_OVP_Rising = 0;
+2092   3            F_OVP_Falling = 0;
+2093   3            
+2094   3            v_Key_Detection();  //Manual testing check up
+2095   3      
+2096   3            //to Emergency operation
+2097   3            if(AC_Mains_state == OFF)
+2098   3            {
+2099   4              uc_System_State = Emergency_Operation;
+2100   4              
+2101   4              uc_Emergency_Time_Hour = 0;
+2102   4              uc_Emergency_Time_Minute = 0;
+2103   4              uc_Emergency_Time_Second = 0; 
+2104   4      
+2105   4              uc_Duration_Test_Time_Second = 0;
+2106   4              uc_Duration_Test_Time_Minute = 0;
+2107   4              uc_Duration_Test_Time_Hour = 0;
+2108   4              uc_Duration_Test_Done = 0;    
+2109   4              Battery_bad = 0;
+2110   4              lamp_bad = 0; 
+2111   4              F_OVP_Rising = 0;
+2112   4              F_OVP_Falling = 0;
+2113   4              
+2114   4              led_red_state_before_Emergency = led_red_state;
+2115   4            } 
+2116   3            
+2117   3            //Normal operation
+2118   3            //to Duration_Test
+2119   3            if((F_Charging_Full == 1) && ((F_Duration_Test_Pending == 1)||(F_Mannual_Duration_Test_Pending == 1)))
+2120   3            {
+2121   4              uc_System_State = Duration_Test;
+2122   4              F_Duration_Test_Pending = 0;
+2123   4              F_Mannual_Duration_Test_Pending = 0;
+2124   4              
+2125   4              uc_Duration_Test_Time_Second = 0;
+2126   4              uc_Duration_Test_Time_Minute = 0;
+2127   4              uc_Duration_Test_Time_Hour = 0;
+2128   4              uc_Duration_Test_Done = 0;    
+2129   4              Battery_bad = 0;
+2130   4              lamp_bad = 0; 
+2131   4              F_OVP_Rising = 0;
+2132   4              F_OVP_Falling = 0;        
+2133   4            }
+2134   3            if((F_Charging_Full == 1) && (F_Duration_Test == 1))
+2135   3            {
+2136   4              uc_System_State = Duration_Test;
+2137   4              F_Duration_Test = 0;
+2138   4              
+2139   4              uc_Duration_Test_Time_Second = 0;
+2140   4              uc_Duration_Test_Time_Minute = 0;
+2141   4              uc_Duration_Test_Time_Hour = 0;
+2142   4              uc_Duration_Test_Done = 0;    
+2143   4              Battery_bad = 0;
+2144   4              lamp_bad = 0; 
+2145   4              F_OVP_Rising = 0;
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 36  
+
+2146   4              F_OVP_Falling = 0;        
+2147   4            }     
+2148   3            
+2149   3            //to Functional_Test
+2150   3            if(F_Functional_Test == 1)
+2151   3            {
+2152   4              F_Functional_Test = 0;
+2153   4              uc_System_State = Functional_Test;
+2154   4        
+2155   4              uc_Functional_Test_Time_Second = 0;
+2156   4              uc_Functional_Test_Done = 0;
+2157   4              Battery_bad = 0;
+2158   4              lamp_bad = 0;
+2159   4              F_OVP_Rising = 0;
+2160   4              F_OVP_Falling = 0;        
+2161   4              
+2162   4              led_green_state_before_test = led_green_state;
+2163   4              led_red_state_before_test = led_red_state;
+2164   4              //led_red_state_before_test = OFF;
+2165   4            }
+2166   3            
+2167   3            
+2168   3            //to Battery_Fault
+2169   3            if(uc_Battery_Fault_Flag == 1)
+2170   3            {
+2171   4              uc_System_State = Battery_Fault;
+2172   4            }
+2173   3          }
+2174   2          break;    
+2175   2          
+2176   2          case Battery_Fault:
+2177   2          {
+2178   3            led_green_state = OFF;
+2179   3            led_red_state = ON;
+2180   3            
+2181   3      /*      GPIO_WriteHigh(CHG_ENABLE_PORT, CHG_ENABLE_PIN);  //Charging allowed
+2182   3            GPIO_WriteLow(LAMP_EN_PORT, LAMP_EN_PIN);   //Disable LAMP */
+2183   3            uc_Charging_Status = ON;  //Charging allowed
+2184   3            LAMP_EN = OFF;    //Disable LAMP
+2185   3            F_OVP_Rising = 0;
+2186   3            F_OVP_Falling = 0;      
+2187   3            if(AC_Mains_state == ON)
+2188   3            {
+2189   4              LAMP_CTL = OFF; //Turn Off Q6
+2190   4            }
+2191   3            else
+2192   3            {
+2193   4              LAMP_CTL = ON;  //Turn ON Q6
+2194   4            }
+2195   3          }
+2196   2          break;  
+2197   2      
+2198   2          case Functional_Test:
+2199   2          {
+2200   3            led_green_state = Flashing_Fast;
+2201   3            led_red_state = OFF;
+2202   3      
+2203   3      /*      GPIO_WriteLow(CHG_ENABLE_PORT, CHG_ENABLE_PIN); //charging OFF
+2204   3            GPIO_WriteHigh(LAMP_CONTROL_PORT, LAMP_CONTROL_PIN);  //Turn ON Q6
+2205   3            GPIO_WriteHigh(LAMP_EN_PORT, LAMP_EN_PIN);    //Enable LAMP  */   
+2206   3            uc_Charging_Status = OFF; //charging OFF
+2207   3            LAMP_CTL = ON;  //Turn ON Q6
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 37  
+
+2208   3            LAMP_EN = ON;   //Enable LAMP 
+2209   3            //to Emergency operation
+2210   3            if(AC_Mains_state == OFF)
+2211   3            {
+2212   4              uc_System_State = Emergency_Operation;
+2213   4              
+2214   4              uc_Emergency_Time_Hour = 0;
+2215   4              uc_Emergency_Time_Minute = 0;
+2216   4              uc_Emergency_Time_Second = 0;   
+2217   4      
+2218   4              uc_Duration_Test_Time_Second = 0;
+2219   4              uc_Duration_Test_Time_Minute = 0;
+2220   4              uc_Duration_Test_Time_Hour = 0;
+2221   4              uc_Duration_Test_Done = 0;    
+2222   4              Battery_bad = 0;
+2223   4              lamp_bad = 0; 
+2224   4              F_OVP_Rising = 0;
+2225   4              F_OVP_Falling = 0;        
+2226   4            }       
+2227   3            
+2228   3            if(uc_Functional_Test_Done == 1)
+2229   3            {
+2230   4              uc_System_State = AC_Charging;  
+2231   4              led_green_state = led_green_state_before_test;
+2232   4              led_red_state = led_red_state_before_test;
+2233   4            }
+2234   3            
+2235   3            //to Battery_Life_Fault
+2236   3            if(Battery_bad == 1)
+2237   3            {
+2238   4              uc_System_State = Battery_Life_Fault;
+2239   4            }
+2240   3            
+2241   3            //to Lamp_Fault
+2242   3            if(lamp_bad == 1)
+2243   3            {
+2244   4              uc_System_State = Lamp_Fault;
+2245   4            }
+2246   3          }
+2247   2          break;  
+2248   2      
+2249   2          case Duration_Test:
+2250   2          {
+2251   3            led_green_state = Flashing_Medium;
+2252   3            led_red_state = OFF;
+2253   3      
+2254   3      /*      GPIO_WriteLow(CHG_ENABLE_PORT, CHG_ENABLE_PIN); //charging OFF
+2255   3            GPIO_WriteHigh(LAMP_CONTROL_PORT, LAMP_CONTROL_PIN);  //Turn ON Q6
+2256   3            GPIO_WriteHigh(LAMP_EN_PORT, LAMP_EN_PIN);    //Enable LAMP    */ 
+2257   3            uc_Charging_Status = OFF; //charging OFF
+2258   3            LAMP_CTL = ON;  //Turn ON Q6
+2259   3            LAMP_EN = ON;   //Enable LAMP 
+2260   3            
+2261   3            if(uc_Duration_Test_Done == 1)
+2262   3            {
+2263   4              uc_System_State = Reset_Charging_Time;    
+2264   4              led_green_state = ON;
+2265   4              led_red_state = OFF;          
+2266   4            }
+2267   3      
+2268   3            //to Emergency operation
+2269   3            if(AC_Mains_state == OFF)
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 38  
+
+2270   3            {
+2271   4              uc_System_State = Emergency_Operation;
+2272   4              F_Duration_Test_Pending = 1;
+2273   4              
+2274   4              uc_Emergency_Time_Hour = 0;
+2275   4              uc_Emergency_Time_Minute = 0;
+2276   4              uc_Emergency_Time_Second = 0;   
+2277   4      
+2278   4              uc_Duration_Test_Time_Second = 0;
+2279   4              uc_Duration_Test_Time_Minute = 0;
+2280   4              uc_Duration_Test_Time_Hour = 0;
+2281   4              uc_Duration_Test_Done = 0;    
+2282   4              Battery_bad = 0;
+2283   4              lamp_bad = 0; 
+2284   4              F_OVP_Rising = 0;
+2285   4              F_OVP_Falling = 0;        
+2286   4            }     
+2287   3            
+2288   3            //to Battery_Life_Fault
+2289   3            if(Battery_bad == 1)
+2290   3            {
+2291   4              uc_System_State = Battery_Life_Fault;
+2292   4            }
+2293   3            
+2294   3            //to Lamp_Fault
+2295   3            if(lamp_bad == 1)
+2296   3            {
+2297   4              uc_System_State = Lamp_Fault;
+2298   4            }     
+2299   3          }
+2300   2          break;  
+2301   2      
+2302   2          case Battery_Life_Fault:
+2303   2          {
+2304   3            led_green_state = OFF;
+2305   3            led_red_state = Flashing_Medium;
+2306   3            
+2307   3      /*      GPIO_WriteHigh(CHG_ENABLE_PORT, CHG_ENABLE_PIN);  //Charging allowed
+2308   3            GPIO_WriteLow(LAMP_EN_PORT, LAMP_EN_PIN);   //Disable LAMP  
+2309   3            GPIO_WriteHigh(LAMP_CONTROL_PORT, LAMP_CONTROL_PIN);  //Turn ON Q6 */
+2310   3            uc_Charging_Status = ON;    //Charging allowed
+2311   3            LAMP_EN = OFF;    //Disable LAMP  
+2312   3            LAMP_CTL = ON;  //Turn ON Q6
+2313   3      
+2314   3            F_OVP_Rising = 0;
+2315   3            F_OVP_Falling = 0;      
+2316   3            
+2317   3            //to AC_Charging,reset AC_Charging time
+2318   3            if(AC_Mains_state == ON)
+2319   3            {
+2320   4              uc_System_State = Reset_Charging_Time;      
+2321   4            }     
+2322   3          }
+2323   2          break;  
+2324   2      
+2325   2          case Lamp_Fault:
+2326   2          {
+2327   3            led_green_state = OFF;
+2328   3            led_red_state = Flashing_Fast;  
+2329   3      
+2330   3      /*      GPIO_WriteHigh(CHG_ENABLE_PORT, CHG_ENABLE_PIN);  //Charging allowed
+2331   3            GPIO_WriteLow(LAMP_EN_PORT, LAMP_EN_PIN);   //Disable LAMP  
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 39  
+
+2332   3            GPIO_WriteHigh(LAMP_CONTROL_PORT, LAMP_CONTROL_PIN);  //Turn ON Q6 */
+2333   3            uc_Charging_Status = ON;  //Charging allowed
+2334   3            LAMP_EN = OFF;    //Disable LAMP  
+2335   3            LAMP_CTL = ON;  //Turn ON Q6
+2336   3            
+2337   3            F_OVP_Rising = 0;
+2338   3            F_OVP_Falling = 0;      
+2339   3      
+2340   3            //to AC_Charging,reset AC_Charging time
+2341   3            if(AC_Mains_state == ON)
+2342   3            {
+2343   4              uc_System_State = Reset_Charging_Time;        
+2344   4            }
+2345   3          }
+2346   2          break;
+2347   2          
+2348   2          case Emergency_Operation:
+2349   2          {
+2350   3            led_green_state = OFF;
+2351   3            led_red_state = OFF;
+2352   3        
+2353   3      
+2354   3      /*      GPIO_WriteLow(CHG_ENABLE_PORT, CHG_ENABLE_PIN); //Charging OFF
+2355   3            GPIO_WriteHigh(LAMP_CONTROL_PORT, LAMP_CONTROL_PIN);  //Turn ON Q6
+2356   3            GPIO_WriteHigh(LAMP_EN_PORT, LAMP_EN_PIN);    //Enable LAMP  */
+2357   3            uc_Charging_Status = OFF; //Charging OFF
+2358   3            LAMP_CTL = ON;  //Turn ON Q6
+2359   3            LAMP_EN = ON;   //Enable LAMP 
+2360   3      
+2361   3            //to Battery_Life_Fault
+2362   3            if((Battery_bad == 1) && (uc_Duration_Test_Done==0))
+2363   3            {
+2364   4              uc_System_State = Battery_Life_Fault;
+2365   4            }
+2366   3            
+2367   3            //to Lamp_Fault
+2368   3            if(lamp_bad == 1)
+2369   3            {
+2370   4              uc_System_State = Lamp_Fault;
+2371   4            } 
+2372   3      
+2373   3            //to AC_Charging,reset AC_Charging time
+2374   3            if(AC_Mains_state == ON)
+2375   3            {
+2376   4              uc_System_State = Reset_Charging_Time;    
+2377   4              
+2378   4              
+2379   4              if(led_red_state_before_Emergency == OFF)
+2380   4              {
+2381   5                led_green_state = ON;
+2382   5                led_red_state = OFF;  
+2383   5              } 
+2384   4              else
+2385   4              {
+2386   5                led_red_state = led_red_state_before_Emergency;
+2387   5              }
+2388   4            }     
+2389   3          }
+2390   2          break;  
+2391   2      
+2392   2          case Reset_Charging_Time:
+2393   2          {
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 40  
+
+2394   3              uc_System_State = AC_Charging;
+2395   3              
+2396   3              uc_AC_Charging_Time_Second = 0;
+2397   3              uc_AC_Charging_Time_Minute = 0;
+2398   3              uc_AC_Charging_Time_Hour = 0; 
+2399   3      
+2400   3              if(F_Duration_Test_Pending == 1)
+2401   3              {
+2402   4                uc_AC_Charging_Target_Hour = (24 + rand()%24);
+2403   4                uc_AC_Charging_Target_Minute = rand()%60;
+2404   4                uc_AC_Charging_Target_Second = rand()%60;
+2405   4                
+2406   4                if(auto_test_flag == 1)
+2407   4                {
+2408   5                uc_AC_Charging_Target_Hour = 0;
+2409   5                uc_AC_Charging_Target_Minute = 0;
+2410   5                uc_AC_Charging_Target_Second = (24 + rand()%24);    
+2411   5                }
+2412   4              }
+2413   3              else
+2414   3              {
+2415   4                uc_AC_Charging_Target_Hour = 24;
+2416   4                uc_AC_Charging_Target_Minute = 0;
+2417   4                uc_AC_Charging_Target_Second = 0;
+2418   4                
+2419   4                if(auto_test_flag == 1)
+2420   4                {
+2421   5                uc_AC_Charging_Target_Hour = 0;
+2422   5                uc_AC_Charging_Target_Minute = 0;
+2423   5                uc_AC_Charging_Target_Second = 24;    
+2424   5                }         
+2425   4              }
+2426   3              
+2427   3              F_Charging_Full = 0;
+2428   3              
+2429   3              F_Functional_Test = 0;  //over-write functional test
+2430   3          }
+2431   2          break;
+2432   2          default:
+2433   2          break;  
+2434   2        } 
+2435   1      }
+2436          
+2437          /********************************************************************
+2438          *Prototype   : void Load_Test_Proc(void)
+2439          *Arguments   : void
+2440          *Return      : void
+2441          *Description : Load_Test_Proc 
+2442                check load OK: 2.4V, bad:3.4V
+2443          ********************************************************************/
+2444          static void Load_Test_Proc(void)
+2445          {
+2446   1        UINT16 temph = 0;
+2447   1      
+2448   1      //  temph = Bandgap_Calibrate(LOAD_OVP_1V,LOAD_OVP_0_01V);  
+2449   1        //if(Load_Value > temph)
+2450   1        if(Load_Value_mV > LOAD_OVP_mV) 
+2451   1        {
+2452   2          lamp_bad = 1;       
+2453   2        }
+2454   1        
+2455   1      /*  if(Load_Value > temph) // 27:34
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 41  
+
+2456   1        {
+2457   1          F_OVP_Rising = 1;       
+2458   1        }
+2459   1        
+2460   1        temph = Bandgap_Calibrate(LOAD_FALLING_1V,LOAD_FALLING_0_01V);
+2461   1        if((Load_Value < temph) && (F_OVP_Rising == 1))
+2462   1        {
+2463   1          lamp_bad = 1;//lamp bad 
+2464   1        } */
+2465   1        
+2466   1        
+2467   1        //Two LED branches
+2468   1        //With updated circuitry,Load_Value = 3~6 when the main led branch is open
+2469   1        //detect this only when lamp = ON
+2470   1        if((uc_System_State == Functional_Test)
+2471   1          || (uc_System_State == Duration_Test)
+2472   1            || (uc_System_State == Emergency_Operation))
+2473   1        {
+2474   2          if(Load_Value_mV < LOAD_OPEN_mV)    
+2475   2          {
+2476   3            uc_Lamp_bad_counter ++;
+2477   3            if(uc_Lamp_bad_counter >= 25)
+2478   3            {
+2479   4              lamp_bad = 1;//lamp bad 
+2480   4            }
+2481   3          }
+2482   2          else
+2483   2          {
+2484   3            uc_Lamp_bad_counter = 0;
+2485   3          }
+2486   2        }
+2487   1      
+2488   1      }
+2489          /********************************************************************
+2490          *Prototype   : void Battery_Test_Proc(void)
+2491          *Arguments   : void
+2492          *Return      : void
+2493          *Description : Battery_Test_Proc
+2494                check battery OK:3.6V,bad:3.1V
+2495          ********************************************************************/
+2496          static void Battery_Test_Proc(void)
+2497          {
+2498   1        UINT16 temph = 0;
+2499   1        
+2500   1        //do battery NC check
+2501   1        if((U8_Battery_Discharge_ticks_ms >= 2) && (U8_Battery_Discharge_ticks_ms <= Battery_NC_Check_Discharge_T
+             -icks_ms))
+2502   1        {
+2503   2          //battery nc check
+2504   2          if((Battery_Value_mV_bkup > Battery_Value_mV) && ((Battery_Value_mV_bkup - Battery_Value_mV) >= BATTERY_
+             -NC_mV))
+2505   2          {
+2506   3            uc_Battery_Fault_Flag = 1;      
+2507   3            //printf("Battery disconnected\r\n");
+2508   3          }   
+2509   2          printf("Bat vol bkup @MCU = %d\r\n",Battery_Value_mV_bkup);
+2510   2          printf("Bat vol @MCU = %d\r\n",Battery_Value_mV);
+2511   2        }
+2512   1        //do battery voltag too low check 
+2513   1        else if (U8_Battery_Discharge_ticks_ms >= (Battery_NC_Check_Discharge_Ticks_ms + 2))
+2514   1        {
+2515   2          //UVP check
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 42  
+
+2516   2          if(Battery_Value_mV < (BATTERY_UVP_mV - BATTERY_DIS_INTERNAL_LOSS_mV))
+2517   2          {  
+2518   3            Battery_bad = 1;//battery bad
+2519   3          }
+2520   2          
+2521   2          //OVP check
+2522   2          if((Battery_Value_mV >= (BATTERY_OVP_mV + BATTERY_CHAG_INTERNAL_LOSS_mV)) && (Battery_Fully_Charged == 0
+             -))
+2523   2          {  
+2524   3            Battery_Fully_Charged = 1;//battery full,no charge needed
+2525   3          }
+2526   2          if((Battery_Value_mV < BATTERY_OVP_mV) && (Battery_Fully_Charged == 1))
+2527   2          {  
+2528   3            Battery_Fully_Charged = 0;//battery not full,charge needed
+2529   3          }   
+2530   2          
+2531   2          //update backup value only during charging state
+2532   2          if(Battery_Fully_Charged == 0)
+2533   2          {
+2534   3            Battery_Value_mV_bkup = Battery_Value_mV;
+2535   3          }
+2536   2          else
+2537   2          {
+2538   3            Battery_Value_mV_bkup = BATTERY_OVP_mV;
+2539   3          }
+2540   2          
+2541   2          U8_Battery_Discharge_ticks_ms = Battery_NC_Check_Discharge_Ticks_ms + 2;
+2542   2        }
+2543   1      }
+2544          
+2545          
+2546          
+2547          
+2548          static void v_ADC_process(void)
+2549          {
+2550   1        //Bandgap channel processing
+2551   1        if((ADCCON0 & 0x0F) == 0x08)
+2552   1        {
+2553   2          if(ADC_index >= 10) //skip the first 10 sampling result, for accuracy
+2554   2          {
+2555   3            ADC_Value_Array[ADC_index - 10] = ((ADCRH<<4) + ADCRL);
+2556   3            //ADC_Value_Array[ADC_index - 200] = 0x01;
+2557   3            
+2558   3            if(ADC_Value_Array[ADC_index-10]>ADC_Value_Max)
+2559   3            {
+2560   4              ADC_Value_Max = ADC_Value_Array[ADC_index-10];
+2561   4            }
+2562   3            if(ADC_Value_Array[ADC_index-10]<ADC_Value_Min)
+2563   3            {
+2564   4              ADC_Value_Min = ADC_Value_Array[ADC_index-10];
+2565   4            }
+2566   3          }
+2567   2      
+2568   2          if(ADC_index >= 19) //take the sampling value Nr10-19
+2569   2          {     
+2570   3            ADC_Value = 0;
+2571   3            ADC_Value = (ADC_Value_Array[0]+ADC_Value_Array[1]+ADC_Value_Array[2]+ADC_Value_Array[3]+ADC_Value_Arra
+             -y[4]
+2572   3                 +ADC_Value_Array[5]+ADC_Value_Array[6]+ADC_Value_Array[7]+ADC_Value_Array[8]+ADC_Value_Array[9]);
+2573   3            ADC_Value = (ADC_Value - ADC_Value_Max);
+2574   3            ADC_Value = (ADC_Value - ADC_Value_Min);
+2575   3            Bandgap_Value = (ADC_Value>>3);
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 43  
+
+2576   3            ADC_Value_Max = 0;
+2577   3            ADC_Value_Min = 0x3FFF;
+2578   3            
+2579   3            //enable channel VLAMP_ADC_CHANNEL_NR
+2580   3            {
+2581   4              #if (VLAMP_ADC_CHANNEL_NR == 1)
+                        Enable_ADC_AIN1;  //Channel 1 selected
+                      #elif (VLAMP_ADC_CHANNEL_NR == 2)
+                        Enable_ADC_AIN2;  //Channel 2 selected
+                      #elif (VLAMP_ADC_CHANNEL_NR == 3)
+                        Enable_ADC_AIN3;  //Channel 3 selected
+                      #elif (VLAMP_ADC_CHANNEL_NR == 4)
+                        Enable_ADC_AIN4;  //Channel 4 selected
+                      #elif (VLAMP_ADC_CHANNEL_NR == 5)
+2590   4                Enable_ADC_AIN5;  //Channel 5 selected
+2591   4              #elif (VLAMP_ADC_CHANNEL_NR == 6)
+                        Enable_ADC_AIN6;  //Channel 6 selected
+                      #elif (VLAMP_ADC_CHANNEL_NR == 7)
+                        Enable_ADC_AIN7;  //Channel 7 selected
+                      #endif
+2596   4            }
+2597   3            
+2598   3            ADC_index = 0;
+2599   3          }
+2600   2          else
+2601   2          {   
+2602   3            ADC_index++;
+2603   3          }
+2604   2          
+2605   2          set_ADCS; //Start ADC
+2606   2        }
+2607   1        
+2608   1        //channel VLAMP_ADC_CHANNEL_NR processing;Load voltage
+2609   1        else if((ADCCON0 & 0x0F) == VLAMP_ADC_CHANNEL_NR)
+2610   1        {
+2611   2          if(ADC_index >= 10)
+2612   2          {     
+2613   3            ADC_Value = 0;
+2614   3            ADC_Value = (ADC_Value_Array[0]+ADC_Value_Array[1]+ADC_Value_Array[2]+ADC_Value_Array[3]+ADC_Value_Arra
+             -y[4]
+2615   3                 +ADC_Value_Array[5]+ADC_Value_Array[6]+ADC_Value_Array[7]+ADC_Value_Array[8]+ADC_Value_Array[9]);
+2616   3            ADC_Value = (ADC_Value - ADC_Value_Max);
+2617   3            ADC_Value = (ADC_Value - ADC_Value_Min);
+2618   3            Load_Value = (ADC_Value>>3);
+2619   3            ADC_Value_Max = 0;
+2620   3            ADC_Value_Min = 0x3FFF;
+2621   3            
+2622   3            Load_Value_mV = ADC_to_AIN_mV(Load_Value); 
+2623   3            //enable channel VBAT_ADC_CHANNEL_NR
+2624   3            {
+2625   4              #if (VBAT_ADC_CHANNEL_NR == 1)
+                        Enable_ADC_AIN1;  //Channel 1 selected
+                      #elif (VBAT_ADC_CHANNEL_NR == 2)
+                        Enable_ADC_AIN2;  //Channel 2 selected
+                      #elif (VBAT_ADC_CHANNEL_NR == 3)
+                        Enable_ADC_AIN3;  //Channel 3 selected
+                      #elif (VBAT_ADC_CHANNEL_NR == 4)
+                        Enable_ADC_AIN4;  //Channel 4 selected
+                      #elif (VBAT_ADC_CHANNEL_NR == 5)
+                        Enable_ADC_AIN5;  //Channel 5 selected
+                      #elif (VBAT_ADC_CHANNEL_NR == 6)
+2636   4                Enable_ADC_AIN6;  //Channel 6 selected
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 44  
+
+2637   4              #elif (VBAT_ADC_CHANNEL_NR == 7)
+                        Enable_ADC_AIN7;  //Channel 7 selected
+                      #endif
+2640   4            }
+2641   3            
+2642   3            ADC_index = 0;
+2643   3            
+2644   3          }
+2645   2          else
+2646   2          {   
+2647   3            ADC_Value_Array[ADC_index] = ((ADCRH<<4) + ADCRL);
+2648   3            
+2649   3            if(ADC_Value_Array[ADC_index]>ADC_Value_Max)
+2650   3            ADC_Value_Max = ADC_Value_Array[ADC_index];
+2651   3            if(ADC_Value_Array[ADC_index]<ADC_Value_Min)
+2652   3            ADC_Value_Min = ADC_Value_Array[ADC_index]; 
+2653   3        
+2654   3        
+2655   3            ADC_index++;
+2656   3          }
+2657   2          
+2658   2          set_ADCS; //Start ADC
+2659   2          
+2660   2      
+2661   2        } 
+2662   1        
+2663   1        //channel VBAT_ADC_CHANNEL_NR processing;Vbattery voltage
+2664   1        else if((ADCCON0 & 0x0F) == VBAT_ADC_CHANNEL_NR)
+2665   1        {
+2666   2          if(ADC_index >= 10)
+2667   2          {     
+2668   3            ADC_Value = 0;
+2669   3            ADC_Value = (ADC_Value_Array[0]+ADC_Value_Array[1]+ADC_Value_Array[2]+ADC_Value_Array[3]+ADC_Value_Arra
+             -y[4]
+2670   3                 +ADC_Value_Array[5]+ADC_Value_Array[6]+ADC_Value_Array[7]+ADC_Value_Array[8]+ADC_Value_Array[9]);
+2671   3            ADC_Value = (ADC_Value - ADC_Value_Max);
+2672   3            ADC_Value = (ADC_Value - ADC_Value_Min);
+2673   3            Battery_Value = (ADC_Value>>3);
+2674   3            ADC_Value_Max = 0;
+2675   3            ADC_Value_Min = 0x3FFF;
+2676   3            
+2677   3            
+2678   3            ADC_index = 0;
+2679   3            
+2680   3            
+2681   3            Battery_Value_mV = ADC_to_AIN_mV(Battery_Value);
+2682   3            
+2683   3            
+2684   3            #ifdef BT_MESH_FEATURE_IN
+                      //enable channel SW_DET_ADC_CHANNEL_NR
+                      {
+                        #if (SW_DET_ADC_CHANNEL_NR == 1)
+                          Enable_ADC_AIN1;  //Channel 1 selected
+                        #elif (SW_DET_ADC_CHANNEL_NR == 2)
+                          Enable_ADC_AIN2;  //Channel 2 selected
+                        #elif (SW_DET_ADC_CHANNEL_NR == 3)
+                          Enable_ADC_AIN3;  //Channel 3 selected
+                        #elif (SW_DET_ADC_CHANNEL_NR == 4)
+                          Enable_ADC_AIN4;  //Channel 4 selected
+                        #elif (SW_DET_ADC_CHANNEL_NR == 5)
+                          Enable_ADC_AIN5;  //Channel 5 selected
+                        #elif (SW_DET_ADC_CHANNEL_NR == 6)
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 45  
+
+                          Enable_ADC_AIN6;  //Channel 6 selected
+                        #elif (SW_DET_ADC_CHANNEL_NR == 7)
+                          Enable_ADC_AIN7;  //Channel 7 selected
+                        #endif
+                      }     
+                    #else 
+2704   3              Enable_ADC_BandGap; //Channel 8 (band-gap) selected 
+2705   3              F_ADC_All_Channels_Complete = 1;
+2706   3            #endif
+2707   3          }
+2708   2          else
+2709   2          {   
+2710   3            ADC_Value_Array[ADC_index] = ((ADCRH<<4) + ADCRL);
+2711   3            
+2712   3            if(ADC_Value_Array[ADC_index]>ADC_Value_Max)
+2713   3            ADC_Value_Max = ADC_Value_Array[ADC_index];
+2714   3            if(ADC_Value_Array[ADC_index]<ADC_Value_Min)
+2715   3            ADC_Value_Min = ADC_Value_Array[ADC_index]; 
+2716   3        
+2717   3        
+2718   3            ADC_index++;
+2719   3          }
+2720   2          
+2721   2          set_ADCS; //Start ADC
+2722   2        }
+2723   1        
+2724   1        //channel SW_DET_ADC_CHANNEL_NR processing;3 bits switch buttons
+2725   1      #ifdef  BT_MESH_FEATURE_IN
+                else if((ADCCON0 & 0x0F) == SW_DET_ADC_CHANNEL_NR)
+              #else
+2728   1        else if(0)
+2729   1      #endif    
+2730   1        {
+2731   2          if(ADC_index >= 10)
+2732   2          {     
+2733   3            ADC_Value = 0;
+2734   3            ADC_Value = (ADC_Value_Array[0]+ADC_Value_Array[1]+ADC_Value_Array[2]+ADC_Value_Array[3]+ADC_Value_Arra
+             -y[4]
+2735   3                 +ADC_Value_Array[5]+ADC_Value_Array[6]+ADC_Value_Array[7]+ADC_Value_Array[8]+ADC_Value_Array[9]);
+2736   3            ADC_Value = (ADC_Value - ADC_Value_Max);
+2737   3            ADC_Value = (ADC_Value - ADC_Value_Min);
+2738   3            SW_3_bits_Value = (ADC_Value>>3);
+2739   3            ADC_Value_Max = 0;
+2740   3            ADC_Value_Min = 0x3FFF;
+2741   3            
+2742   3            ADC_index = 0;
+2743   3            
+2744   3            #ifdef BT_MESH_FEATURE_IN
+                      //enable channel KEY_AUTO_MANUAL_ADC_CHANNEL_NR
+                      {
+                        #if (KEY_AUTO_MANUAL_ADC_CHANNEL_NR == 1)
+                          Enable_ADC_AIN1;  //Channel 1 selected
+                        #elif (KEY_AUTO_MANUAL_ADC_CHANNEL_NR == 2)
+                          Enable_ADC_AIN2;  //Channel 2 selected
+                        #elif (KEY_AUTO_MANUAL_ADC_CHANNEL_NR == 3)
+                          Enable_ADC_AIN3;  //Channel 3 selected
+                        #elif (KEY_AUTO_MANUAL_ADC_CHANNEL_NR == 4)
+                          Enable_ADC_AIN4;  //Channel 4 selected
+                        #elif (KEY_AUTO_MANUAL_ADC_CHANNEL_NR == 5)
+                          Enable_ADC_AIN5;  //Channel 5 selected
+                        #elif (KEY_AUTO_MANUAL_ADC_CHANNEL_NR == 6)
+                          Enable_ADC_AIN6;  //Channel 6 selected
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 46  
+
+                        #elif (KEY_AUTO_MANUAL_ADC_CHANNEL_NR == 7)
+                          Enable_ADC_AIN7;  //Channel 7 selected
+                        #endif
+                      }     
+                    #else 
+2764   3              Enable_ADC_BandGap; //Channel 8 (band-gap) selected 
+2765   3              F_ADC_All_Channels_Complete = 1;
+2766   3            #endif
+2767   3          }
+2768   2          else
+2769   2          {   
+2770   3            ADC_Value_Array[ADC_index] = ((ADCRH<<4) + ADCRL);
+2771   3            
+2772   3            if(ADC_Value_Array[ADC_index]>ADC_Value_Max)
+2773   3            ADC_Value_Max = ADC_Value_Array[ADC_index];
+2774   3            if(ADC_Value_Array[ADC_index]<ADC_Value_Min)
+2775   3            ADC_Value_Min = ADC_Value_Array[ADC_index]; 
+2776   3        
+2777   3        
+2778   3            ADC_index++;
+2779   3          }
+2780   2          
+2781   2          set_ADCS; //Start ADC
+2782   2        } 
+2783   1      
+2784   1        //channel KEY_AUTO_MANUAL_ADC_CHANNEL_NR processing;Auto/Manual button switch detection
+2785   1      #ifdef  BT_MESH_FEATURE_IN
+                else if((ADCCON0 & 0x0F) == KEY_AUTO_MANUAL_ADC_CHANNEL_NR)
+              #else
+2788   1        else if(0)
+2789   1      #endif      
+2790   1        {
+2791   2          if(ADC_index >= 10)
+2792   2          {     
+2793   3            ADC_Value = 0;
+2794   3            ADC_Value = (ADC_Value_Array[0]+ADC_Value_Array[1]+ADC_Value_Array[2]+ADC_Value_Array[3]+ADC_Value_Arra
+             -y[4]
+2795   3                 +ADC_Value_Array[5]+ADC_Value_Array[6]+ADC_Value_Array[7]+ADC_Value_Array[8]+ADC_Value_Array[9]);
+2796   3            ADC_Value = (ADC_Value - ADC_Value_Max);
+2797   3            ADC_Value = (ADC_Value - ADC_Value_Min);
+2798   3            KEY_Auto_Manual_Value = (ADC_Value>>3);
+2799   3            ADC_Value_Max = 0;
+2800   3            ADC_Value_Min = 0x3FFF;
+2801   3            
+2802   3            ADC_index = 0;
+2803   3      
+2804   3            Enable_ADC_BandGap; //Channel 8 (band-gap) selected 
+2805   3            F_ADC_All_Channels_Complete = 1;
+2806   3      
+2807   3          }
+2808   2          else
+2809   2          {   
+2810   3            ADC_Value_Array[ADC_index] = ((ADCRH<<4) + ADCRL);
+2811   3            
+2812   3            if(ADC_Value_Array[ADC_index]>ADC_Value_Max)
+2813   3            ADC_Value_Max = ADC_Value_Array[ADC_index];
+2814   3            if(ADC_Value_Array[ADC_index]<ADC_Value_Min)
+2815   3            ADC_Value_Min = ADC_Value_Array[ADC_index]; 
+2816   3        
+2817   3        
+2818   3            ADC_index++;
+2819   3          }
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 47  
+
+2820   2          
+2821   2          set_ADCS; //Start ADC
+2822   2        } 
+2823   1        
+2824   1        else
+2825   1        {
+2826   2          Enable_ADC_BandGap; 
+2827   2          set_ADCS; //Start ADC conversion    
+2828   2        }
+2829   1      }
+2830          
+2831          // calibrate reference voltage with Bandgap result.
+2832          // Value_1V: reference voltage in 1V
+2833          // Value_0_01V: reference voltage in 0.01V
+2834          UINT16 Bandgap_Calibrate(UINT8 Value_1V,UINT8 Value_0_01V)
+2835          {
+2836   1        UINT16 U16_temp_calibrate;
+2837   1        
+2838   1        U16_temp_calibrate = (Bandgap_Value/10);
+2839   1        U16_temp_calibrate = U16_temp_calibrate * Value_0_01V;
+2840   1        U16_temp_calibrate = (U16_temp_calibrate/10);
+2841   1        
+2842   1        U16_temp_calibrate = (U16_temp_calibrate + (Value_1V * Bandgap_Value)); //Bandgap_Value
+2843   1        
+2844   1        return U16_temp_calibrate;
+2845   1      
+2846   1      }
+2847          
+2848          //convert ADC value back to AIN, each bit stands for 0.001V
+2849          UINT16 ADC_to_AIN_mV(UINT16 Value_ADC)
+2850          {
+2851   1        UINT16 xdata U16_TEMP_ADC_H,U16_TEMP_ADC_L,U16_TEMP_ADC1,U16_TEMP_ADC2,U16_TEMP_ADC3,U16_TEMP_ADC4;
+2852   1        UINT16 xdata U16_MUL_AH,U16_MUL_AL,U16_MUL_BH,U16_MUL_BL;
+2853   1        UINT8 xdata U8_i_ADC_AIN;
+2854   1        
+2855   1        
+2856   1        //(Value_ADC*U16_Bandgap_Value);
+2857   1        U16_MUL_AH = (Value_ADC >> 8);
+2858   1        U16_MUL_AL = (Value_ADC & 0xFF);
+2859   1        U16_MUL_BH = (U16_Bandgap_Value >> 8);
+2860   1        U16_MUL_BL = (U16_Bandgap_Value & 0xFF);
+2861   1        
+2862   1        U16_TEMP_ADC1 = U16_MUL_AL * U16_MUL_BL;  //AL*BL
+2863   1        U16_TEMP_ADC2 = U16_MUL_AH * U16_MUL_BL;  //AH*BL
+2864   1        U16_TEMP_ADC3 = U16_MUL_AL * U16_MUL_BH;  //AL*BH
+2865   1        U16_TEMP_ADC4 = U16_MUL_AH * U16_MUL_BH;  //AH*BH
+2866   1        
+2867   1        U16_TEMP_ADC_L = U16_TEMP_ADC1;
+2868   1        U16_TEMP_ADC_H = U16_TEMP_ADC4;
+2869   1        if(U16_TEMP_ADC_L > (0xFFFF - (U16_TEMP_ADC2 << 8)))  //overflow
+2870   1        {
+2871   2          U16_TEMP_ADC_H++;
+2872   2        }
+2873   1        U16_TEMP_ADC_L = U16_TEMP_ADC_L + (U16_TEMP_ADC2 << 8);
+2874   1        U16_TEMP_ADC_H = U16_TEMP_ADC_H + (U16_TEMP_ADC2 >> 8);
+2875   1        
+2876   1        if(U16_TEMP_ADC_L > (0xFFFF - (U16_TEMP_ADC3 << 8)))  //overflow
+2877   1        {
+2878   2          U16_TEMP_ADC_H++;
+2879   2        }
+2880   1        U16_TEMP_ADC_L = U16_TEMP_ADC_L + (U16_TEMP_ADC3 << 8);
+2881   1        U16_TEMP_ADC_H = U16_TEMP_ADC_H + (U16_TEMP_ADC3 >> 8); 
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 48  
+
+2882   1        
+2883   1        //(Value_ADC*U16_Bandgap_Value)/Bandgap_Value
+2884   1        U8_i_ADC_AIN = 0;
+2885   1        U16_TEMP_ADC1 = 0;
+2886   1        U16_TEMP_ADC2 = 0;
+2887   1        U16_TEMP_ADC3 = 0;
+2888   1        while (U8_i_ADC_AIN <= 15)
+2889   1        {
+2890   2          U16_TEMP_ADC1 = U16_TEMP_ADC_H/Bandgap_Value;
+2891   2          U16_TEMP_ADC2 = (U16_TEMP_ADC1 << (16-U8_i_ADC_AIN));
+2892   2          U16_TEMP_ADC3 = U16_TEMP_ADC2 + U16_TEMP_ADC3;
+2893   2          
+2894   2          U16_TEMP_ADC_H = (U16_TEMP_ADC_H % Bandgap_Value);
+2895   2          U16_TEMP_ADC_H = (U16_TEMP_ADC_H << 1) + (U16_TEMP_ADC_L >> 15);
+2896   2          U16_TEMP_ADC_L = (U16_TEMP_ADC_L << 1);
+2897   2              
+2898   2          U8_i_ADC_AIN++;
+2899   2        }
+2900   1        
+2901   1        U16_TEMP_ADC3 = U16_TEMP_ADC3*3;
+2902   1        U16_TEMP_ADC3 = U16_TEMP_ADC3/4;
+2903   1        
+2904   1        
+2905   1        return U16_TEMP_ADC3; //in mV
+2906   1        
+2907   1      /*  Temp_AIN_0_1V = (Value_ADC*10)/Bandgap_Value;
+2908   1        Temp_AIN_0_01V = (((Value_ADC*10) % Bandgap_Value) * 10)/Bandgap_Value + 1;   //round up
+2909   1        Temp_AIN_0_01V = Temp_AIN_0_01V + (Temp_AIN_0_1V * 10);
+2910   1        
+2911   1        return Temp_AIN_0_01V; */
+2912   1        
+2913   1      }
+2914          
+2915          UINT16 U16_Read_Bandgap()
+2916          {
+2917   1        UINT16 U16_temp;
+2918   1        UINT8 U8_Bandgap_high,U8_Bandgap_low;
+2919   1        
+2920   1        set_IAPEN;
+2921   1        IAPAL = 0x0C;
+2922   1        IAPAH = 0x00;
+2923   1        IAPCN = 0x04;
+2924   1        set_IAPGO;
+2925   1        U8_Bandgap_high = IAPFD;
+2926   1        
+2927   1        IAPAL = 0x0D;
+2928   1        IAPAH = 0x00;
+2929   1        IAPCN = 0x04;
+2930   1        set_IAPGO;
+2931   1        U8_Bandgap_low = IAPFD; 
+2932   1        U8_Bandgap_low = U8_Bandgap_low & 0x0F;
+2933   1        clr_IAPEN;
+2934   1        
+2935   1        U16_temp = U8_Bandgap_high;
+2936   1        U16_temp = (U16_temp <<4 ) + U8_Bandgap_low;
+2937   1        
+2938   1        return U16_temp;
+2939   1      }
+2940          
+2941          /* UINT16 U16_Read_Bandgap_Value()
+2942          {
+2943            if(ADC_index >= 10) //skip the first 10 sampling result, for accuracy
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 49  
+
+2944            {
+2945              ADC_Value_Array[ADC_index - 10] = ((ADCRH<<4) + ADCRL);
+2946              //ADC_Value_Array[ADC_index - 200] = 0x01;
+2947              
+2948              if(ADC_Value_Array[ADC_index-10]>ADC_Value_Max)
+2949              {
+2950                ADC_Value_Max = ADC_Value_Array[ADC_index-10];
+2951              }
+2952              if(ADC_Value_Array[ADC_index-10]<ADC_Value_Min)
+2953              {
+2954                ADC_Value_Min = ADC_Value_Array[ADC_index-10];
+2955              }
+2956            }
+2957          
+2958            if(ADC_index >= 19) //take the sampling value Nr10-19
+2959            {     
+2960              ADC_Value = 0;
+2961              ADC_Value = (ADC_Value_Array[0]+ADC_Value_Array[1]+ADC_Value_Array[2]+ADC_Value_Array[3]+ADC_Value_Array
+             -[4]
+2962                   +ADC_Value_Array[5]+ADC_Value_Array[6]+ADC_Value_Array[7]+ADC_Value_Array[8]+ADC_Value_Array[9]);
+2963              ADC_Value = (ADC_Value - ADC_Value_Max);
+2964              ADC_Value = (ADC_Value - ADC_Value_Min);
+2965              Bandgap_Value = (ADC_Value>>3);
+2966              ADC_Value_Max = 0;
+2967              ADC_Value_Min = 0x3FFF;
+2968              
+2969              //enable channel VLAMP_ADC_CHANNEL_NR
+2970              {
+2971                #if (VLAMP_ADC_CHANNEL_NR == 1)
+2972                  Enable_ADC_AIN1;  //Channel 1 selected
+2973                #elif (VLAMP_ADC_CHANNEL_NR == 2)
+2974                  Enable_ADC_AIN2;  //Channel 2 selected
+2975                #elif (VLAMP_ADC_CHANNEL_NR == 3)
+2976                  Enable_ADC_AIN3;  //Channel 3 selected
+2977                #elif (VLAMP_ADC_CHANNEL_NR == 4)
+2978                  Enable_ADC_AIN4;  //Channel 4 selected
+2979                #elif (VLAMP_ADC_CHANNEL_NR == 5)
+2980                  Enable_ADC_AIN5;  //Channel 5 selected
+2981                #elif (VLAMP_ADC_CHANNEL_NR == 6)
+2982                  Enable_ADC_AIN6;  //Channel 6 selected
+2983                #elif (VLAMP_ADC_CHANNEL_NR == 7)
+2984                  Enable_ADC_AIN7;  //Channel 7 selected
+2985                #endif
+2986              }
+2987              
+2988              ADC_index = 0;
+2989            }
+2990            else
+2991            {   
+2992              ADC_index++;
+2993            }
+2994            
+2995            set_ADCS; //Start ADC
+2996          } */
+2997          
+2998          //********************************************************************************************************
+             -***
+2999          //Function: N76E003 APROM program DATAFLASH as EEPROM way 
+3000          //********************************************************************************************************
+             -***
+3001          //reading one byte takes ~4us with 8M Fcpu
+3002          UINT8 Read_APROM_BYTE(UINT16 code *u16_addr)
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 50  
+
+3003          {
+3004   1        UINT8 rdata;
+3005   1        rdata = *u16_addr>>8;
+3006   1        return rdata;
+3007   1      }
+3008          
+3009          void Read_APROM_PAGE(void)
+3010          {
+3011   1        UINT8 looptmp=0;
+3012   1        
+3013   1      //Save APROM data to XRAM0
+3014   1        for(looptmp=0;looptmp<0x80;looptmp++)
+3015   1        {
+3016   2          page_buffer[looptmp] = Read_APROM_BYTE((unsigned int code *)(ADDR_BASE+looptmp));
+3017   2        } 
+3018   1      }
+3019          
+3020              
+3021          void Write_DATAFLASH_BYTE_BUFFER(UINT8 u8_address,UINT8 u8_Data)
+3022          {
+3023   1      // Modify customer data in XRAM
+3024   1          page_buffer[u8_address&0x7f] = u8_Data;
+3025   1      } 
+3026          
+3027          //page write takes around 10ms with 8M Fcpu
+3028          void Write_DATAFLASH_PAGE(void)
+3029          {
+3030   1        UINT8 looptmp=0;
+3031   1        
+3032   1        //Erase APROM DATAFLASH page
+3033   1          IAPAL = ADDR_BASE&0xff;
+3034   1          IAPAH = (ADDR_BASE>>8)&0xff;
+3035   1          IAPFD = 0xFF;
+3036   1          set_IAPEN; 
+3037   1          set_APUEN;
+3038   1          IAPCN = 0x22;     
+3039   1          set_IAPGO; 
+3040   1          
+3041   1      //Save changed RAM data to APROM DATAFLASH
+3042   1          set_IAPEN; 
+3043   1          set_APUEN;
+3044   1          IAPCN = 0x21;
+3045   1          for(looptmp=0;looptmp<0x80;looptmp++)
+3046   1          {
+3047   2            IAPAL = (ADDR_BASE&0xff)+looptmp;
+3048   2            IAPAH = (ADDR_BASE>>8)&0xff;
+3049   2            IAPFD = page_buffer[looptmp];
+3050   2            set_IAPGO;      
+3051   2          }
+3052   1          clr_APUEN;
+3053   1          clr_IAPEN;
+3054   1      }
+3055          
+3056          void system_save_data(void)
+3057          {
+3058   1        Write_DATAFLASH_BYTE_BUFFER(ADDR_SYSTEM_DATA,0x55);
+3059   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 1),0xAA);
+3060   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 2),((ui_Day_counter&0xFF00)>>8));
+3061   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 3),(ui_Day_counter&0x00FF));
+3062   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 4),uc_Hour_counter);
+3063   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 5),uc_Minute_counter);
+3064   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 6),uc_Second_counter);
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 51  
+
+3065   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 7),uc_System_State);
+3066   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 8),uc_AC_Charging_Time_Hour);
+3067   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 9),uc_AC_Charging_Time_Minute);
+3068   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 10),uc_AC_Charging_Time_Second);
+3069   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 11),0x55);
+3070   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 12),0xAA);
+3071   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 13),0x55);
+3072   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 14),0xAA);
+3073   1        Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + 15),0x55);
+3074   1      
+3075   1        Write_DATAFLASH_PAGE();
+3076   1      
+3077   1      }
+3078          
+3079          void clear_flash(void)
+3080          {
+3081   1        UINT8 u8_temp_i = 0;
+3082   1        for(u8_temp_i = 0;u8_temp_i < LENGTH_SYSTEM_DATA;u8_temp_i++)
+3083   1        {
+3084   2          Write_DATAFLASH_BYTE_BUFFER((ADDR_SYSTEM_DATA + u8_temp_i),0);
+3085   2        }
+3086   1        
+3087   1        Write_DATAFLASH_PAGE();
+3088   1      }
+3089          
+3090          char hextoascii(char hex_byte)
+3091          {
+3092   1          char result;
+3093   1          if((hex_byte>=0)&&(hex_byte<=9))            //变成ascii数字
+3094   1              result = hex_byte + 0x30;
+3095   1          else if((hex_byte >= 10)&&(hex_byte <= 15)) //变成ascii大写字母
+3096   1              result = hex_byte + 0x37;
+3097   1          else
+3098   1              result = 0xff;
+3099   1          return result;
+3100   1      }
+3101          
+3102          char asciitohex(char ascii_byte)
+3103          {
+3104   1          char result;
+3105   1          if((ascii_byte>=0x30)&&(ascii_byte<=0x39))            //变成ascii数字
+3106   1              result = ascii_byte - 0x30;
+3107   1          else if((ascii_byte >= 0x41)&&(ascii_byte <= 0x46)) //变成ascii大写字母
+3108   1              result = ascii_byte - 0x37;
+3109   1          else
+3110   1              result = 0xff;
+3111   1          return result;
+3112   1      }
+3113          
+3114          UINT8 U8_UART_TxD_Handle(void)
+3115          {
+3116   1        switch (U8_UART_TxD_Handle_STATUS)
+3117   1        {
+3118   2          case UART_HANDLE_STATUS_BUSY:
+3119   2            return 0;
+3120   2          break;
+3121   2          
+3122   2          case UART_HANDLE_STATUS_STANDBY:
+3123   2          {
+3124   3            if(U8_UART_BUS_STATUS  == UART_BUS_STATUS_STANDBY)
+3125   3            {
+3126   4              TI = 1; //trigger TI, get into UART ISR
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 52  
+
+3127   4            }
+3128   3            return 0;
+3129   3          }
+3130   2          break;
+3131   2          
+3132   2          case UART_HANDLE_STATUS_WAITING_ACK:  //MCU waits for ACK from BT
+3133   2          {
+3134   3            return 0;
+3135   3          }
+3136   2          break;
+3137   2          
+3138   2          case UART_HANDLE_STATUS_WAITING_ANSWER: //MCU waits for answer from BT
+3139   2          {
+3140   3            return 0;
+3141   3          }
+3142   2          break;
+3143   2      
+3144   2          case UART_HANDLE_STATUS_TIME_OUT:
+3145   2          {
+3146   3            return 0;
+3147   3          }
+3148   2          break;
+3149   2      
+3150   2          case UART_HANDLE_STATUS_TO_REPORT:  //MCU is going to report to BT
+3151   2          {
+3152   3            return 0;
+3153   3          }
+3154   2          break;
+3155   2      
+3156   2          case UART_HANDLE_STATUS_TO_ACK:   //MCU is going to ack BT
+3157   2          {
+3158   3            return 0;
+3159   3          }
+3160   2          break;    
+3161   2        }
+3162   1        return 0;
+3163   1        //return UART_BUS_STATUS_STANDBY;
+3164   1      }
+3165          
+3166          UINT8 U8_UART_RxD_Handle(void)
+3167          {
+3168   1        while(RxBuffer_read_counter != RxBuffer_write_counter)
+3169   1        { 
+3170   2          switch (Mesh_Data_RxD.STATUS)
+3171   2          {
+3172   3            case MESH_Data_RxD_STANDBY:
+3173   3              if(RxBuffer[RxBuffer_read_counter] == 0xAA)
+3174   3              {
+3175   4                Mesh_Data_RxD.DATA_Package_Header = 0xAA;
+3176   4                Mesh_Data_RxD.STATUS = MESH_Data_RxD_BUSY;
+3177   4                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Address;
+3178   4              }
+3179   3            break;
+3180   3            
+3181   3            case MESH_Data_RxD_BUSY:
+3182   3            {
+3183   4              if(Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_Address)
+3184   4              {
+3185   5                Mesh_Data_RxD.Target_Short_Address = RxBuffer[RxBuffer_read_counter];
+3186   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Length;
+3187   5              }
+3188   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_Length)
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 53  
+
+3189   4              {
+3190   5                if(RxBuffer[RxBuffer_read_counter] == 0x0A) //10 bytes,fixed length
+3191   5                {
+3192   6                  Mesh_Data_RxD.DATA_Length = RxBuffer[RxBuffer_read_counter];
+3193   6                  Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_FB;            
+3194   6                }
+3195   5                else  //invalid package
+3196   5                {
+3197   6                  Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
+3198   6                  Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Header;            
+3199   6                }
+3200   5              }
+3201   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_FB)
+3202   4              {
+3203   5                Mesh_Data_RxD.Function_Byte = RxBuffer[RxBuffer_read_counter];
+3204   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB8;             
+3205   5              }
+3206   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB8)
+3207   4              {
+3208   5                Mesh_Data_RxD.DATA[8] = RxBuffer[RxBuffer_read_counter];
+3209   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB7;             
+3210   5              } 
+3211   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB7)
+3212   4              {
+3213   5                Mesh_Data_RxD.DATA[7] = RxBuffer[RxBuffer_read_counter];
+3214   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB6;             
+3215   5              }
+3216   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB6)
+3217   4              {
+3218   5                Mesh_Data_RxD.DATA[6] = RxBuffer[RxBuffer_read_counter];
+3219   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB5;             
+3220   5              }
+3221   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB5)
+3222   4              {
+3223   5                Mesh_Data_RxD.DATA[5] = RxBuffer[RxBuffer_read_counter];
+3224   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB4;             
+3225   5              }
+3226   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB4)
+3227   4              {
+3228   5                Mesh_Data_RxD.DATA[4] = RxBuffer[RxBuffer_read_counter];
+3229   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB3;             
+3230   5              }
+3231   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB3)
+3232   4              {
+3233   5                Mesh_Data_RxD.DATA[3] = RxBuffer[RxBuffer_read_counter];
+3234   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB2;             
+3235   5              }
+3236   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB2)
+3237   4              {
+3238   5                Mesh_Data_RxD.DATA[2] = RxBuffer[RxBuffer_read_counter];
+3239   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB1;             
+3240   5              }       
+3241   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB1)
+3242   4              {
+3243   5                Mesh_Data_RxD.DATA[1] = RxBuffer[RxBuffer_read_counter];
+3244   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB0;             
+3245   5              }
+3246   4              else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB0)
+3247   4              {
+3248   5                Mesh_Data_RxD.DATA[0] = RxBuffer[RxBuffer_read_counter];  
+3249   5                Mesh_Data_RxD.STATUS = MESH_Data_RxD_TO_be_Processed;
+3250   5                Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Header;        
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 54  
+
+3251   5              }
+3252   4            }
+3253   3            break;
+3254   3            
+3255   3            case MESH_Data_RxD_TO_be_Processed:
+3256   3                //Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
+3257   3                //Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Header;        
+3258   3            break;
+3259   3          }
+3260   2      
+3261   2          //read pointer update
+3262   2          if(RxBuffer_read_counter >= RxBufferSize)
+3263   2          {
+3264   3            RxBuffer_read_counter=0;
+3265   3          }
+3266   2          else
+3267   2          {
+3268   3            RxBuffer_read_counter++;
+3269   3          }   
+3270   2          
+3271   2          
+3272   2          //process received data package
+3273   2          if(Mesh_Data_RxD.STATUS == MESH_Data_RxD_TO_be_Processed)
+3274   2          {
+3275   3      #ifdef BT_MESH_FEATURE_IN     
+                    PWRC_TRANS_MODE;
+                    Timer0_Delay1ms(1000);
+                    
+                    printf("An valid data package received  \r\n");
+                    Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
+                    Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Header;    
+                    
+                    
+                  //Querry device type
+                  //Response:+CLSS=<A0--Transparent transmission mode>
+                    PWRC_AT_INSTRUCTION_MODE;
+                    printf("AT+CLSS\r\n");      
+                    TI = 1;
+                    Timer0_Delay1ms(200);
+                    PWRC_TRANS_MODE;
+                    
+                    
+                    //Querry short address received
+                    PWRC_AT_INSTRUCTION_MODE;
+                    putchar(0xAA);
+                    putchar(0xFB);
+                    putchar(0xFF);
+                    putchar(0xFF);  
+                    printf("1");
+                    printf("2");      
+                    printf("3");
+                    printf("4");
+                    printf("5");
+                    printf("6");
+                    printf("7");
+                    printf("8");
+                    printf("9");
+                    printf("0");      
+                    TI = 1;
+                    Timer0_Delay1ms(200);
+                    
+                  //Querry device type
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 55  
+
+                  //Response:+CLSS=<A0--Transparent transmission mode>
+                    PWRC_AT_INSTRUCTION_MODE;
+                    printf("AT+CLSS\r\n");      
+                    TI = 1;
+                    Timer0_Delay1ms(200);   
+                    PWRC_TRANS_MODE;
+              #endif      
+3320   3          }
+3321   2          
+3322   2        } 
+3323   1        
+3324   1        //Modify BT short address in mesh network
+3325   1        
+3326   1        
+3327   1        //report BT short address in mesh network
+3328   1        
+3329   1        
+3330   1        //report network ID
+3331   1        
+3332   1        //Modify network ID
+3333   1        
+3334   1        
+3335   1        //report BT MAC address
+3336   1        
+3337   1        //report BT name
+3338   1        
+3339   1        //modify BT name
+3340   1        
+3341   1        //report system info
+3342   1        
+3343   1        return 0;
+3344   1      }
+3345          
+3346          void v_UART_BT_Answer_processing()
+3347          {
+3348   1        //
+3349   1        while(RxBuffer_read_counter != RxBuffer_write_counter)
+3350   1        {   
+3351   2          //new data package received,start from "+"
+3352   2          //if(RxBuffer[RxBuffer_read_counter] == 0x2B) //"+"
+3353   2          if(RxBuffer[RxBuffer_read_counter] == '+')  //"+"
+3354   2          {
+3355   3            U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_START;
+3356   3            
+3357   3            UART_BUFFER_TEMP = NULL;
+3358   3            UART_BUFFER = UART_BUFFER_TEMP;
+3359   3            *UART_BUFFER_TEMP = '+';  //"ASCII "+"
+3360   3          }
+3361   2          else if (U8_UART_Receive_Pakage_Status == UART_RECEIVE_PACKAGE_START)
+3362   2          {
+3363   3            //ends up with "/r/n", a complete package received
+3364   3            //if((*UART_BUFFER_TEMP == 0x0D) && (RxBuffer[RxBuffer_read_counter] == 0x0A))
+3365   3            if((*UART_BUFFER_TEMP == '\r') && (RxBuffer[RxBuffer_read_counter] == '\n'))  
+3366   3            {
+3367   4              U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_COMPLETE;
+3368   4            }
+3369   3            UART_BUFFER_TEMP++;
+3370   3            *UART_BUFFER_TEMP = RxBuffer[RxBuffer_read_counter];      
+3371   3          }
+3372   2              
+3373   2          //read pointer update
+3374   2          if(RxBuffer_read_counter >= RxBufferSize)
+C51 COMPILER V9.59.0.0   MAIN                                                              09/20/2019 13:46:22 PAGE 56  
+
+3375   2          {
+3376   3            RxBuffer_read_counter=0;
+3377   3          }
+3378   2          else
+3379   2          {
+3380   3            RxBuffer_read_counter++;
+3381   3          }   
+3382   2        }
+3383   1      }
+*** WARNING C294 IN LINE 2731 OF Source\main.c: unreachable code
+*** WARNING C294 IN LINE 2791 OF Source\main.c: unreachable code
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   6893    ----
+   CONSTANT SIZE    =    162    ----
+   XDATA SIZE       =    517      21
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     10      31
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =     12    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  3 WARNING(S),  0 ERROR(S)
