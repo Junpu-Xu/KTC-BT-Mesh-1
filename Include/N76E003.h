@@ -197,7 +197,7 @@ sbit P          = PSW^0;
 /*  T2CON  */
 sbit TF2        = T2CON^7;
 sbit TR2        = T2CON^2;
-sbit CMRL2     = T2CON^0;
+sbit CM_RL2     = T2CON^0;
  
 /*  I2CON  */
 sbit I2CEN      = I2CON^6;
