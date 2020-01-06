@@ -138,22 +138,37 @@
         <Ww>
           <count>0</count>
           <WinNumber>1</WinNumber>
-          <ItemText>Battery_Value_mV,0x0A</ItemText>
+          <ItemText>U8_UART_TxD_Handle_STATUS</ItemText>
         </Ww>
         <Ww>
           <count>1</count>
           <WinNumber>1</WinNumber>
-          <ItemText>Battery_Value_mV_bkup,0x0A</ItemText>
+          <ItemText>RxBuffer</ItemText>
         </Ww>
         <Ww>
           <count>2</count>
           <WinNumber>1</WinNumber>
-          <ItemText>Battery_Fully_Charged</ItemText>
+          <ItemText>RxBuffer_read_counter</ItemText>
         </Ww>
         <Ww>
           <count>3</count>
           <WinNumber>1</WinNumber>
-          <ItemText>Load_Value_mV,0x0A</ItemText>
+          <ItemText>RxBuffer_write_counter</ItemText>
+        </Ww>
+        <Ww>
+          <count>4</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>Mesh_Data_RxD</ItemText>
+        </Ww>
+        <Ww>
+          <count>5</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>U8_temp_Checksum</ItemText>
+        </Ww>
+        <Ww>
+          <count>6</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>Firmware_INFO</ItemText>
         </Ww>
       </WatchWindow1>
       <MemoryWindow1>

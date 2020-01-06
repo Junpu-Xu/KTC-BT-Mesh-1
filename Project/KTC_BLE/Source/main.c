@@ -61,6 +61,10 @@ v0.1.4	2019_09_20
 -- Load/lamp check calibrated
 -- Battery check (NC,UVP,OVP) calibrated
 
+v0.1.5 2020_01_06		(to worked with TELINK BT chip)
+-- UART configuration according to "MCU-BT UART communication,v0.2,2020_01_06"
+-- UART receive/send frame tested
+-- "Query_Firmware_Version" implemented
 ------------------------------------------------------------------------------------------------------------*/
 //***********************************************************************************************************
 
@@ -75,12 +79,18 @@ v0.1.4	2019_09_20
 #include "stdlib.h"
 #include "Function_define.h"
 
+
 //!!! IMPORTANT
 //choose which project is to be worked with...
 //#define BT_MESH_FEATURE_IN
 #define EMERGENCY_LAMP_SINGLE_BATTERY
+//#define DEBUG_PRINTF_LOG_EN
 
-#define SOFTWARE_INFO "software version = 0.1.4,2019_09_20\r\n"
+//v0.1.5
+#define Firmware_INFO_1	0x00
+#define Firmware_INFO_2	0x01
+#define Firmware_INFO_3	0x05
+//#define SOFTWARE_INFO "software version = 0.1.5,2020_01_06"\r\n"
 
 //Data flash
 #define ADDR_BASE 0x4700
@@ -123,7 +133,12 @@ void system_read_data(void);
 	UINT16 xdata ui_ms_counter = 0;	
 
 //UART 
-#define UART_ECHO_DEBUG
+//#define UART_ECHO_DEBUG
+#define BT_UART_ON
+
+	//FRAME HEADER 0x5AA5
+	#define BT_UART_FRAME_HEAD1	0x5A
+	#define BT_UART_FRAME_HEAD2	0xA5
 
 	#define BUFFER_SIZE		16
 	char xdata *UART_BUFFER;
@@ -157,35 +172,40 @@ void system_read_data(void);
 	#define UART_MAX_TRY_TIMEOUT	4
 	
 	UINT8 U8_UART_TxD_Handle(void);
-	UINT8 U8_UART_RxD_Handle(void);
+	UINT8 U8_BT_MESH_UART_RxD_Handle(void);
 
+	#define MESH_DATA_MAX_LEN	10
 	struct Mesh_Data_package
 	{
-		UINT8	DATA_Package_Header;
-		UINT8	Target_Short_Address;
+		UINT8	DATA_Package_Header1;
+		UINT8	DATA_Package_Header2;
 		UINT8	DATA_Length;		
 		UINT8	Function_Byte;
-		UINT8	DATA[9];
+		UINT8	DATA[MESH_DATA_MAX_LEN];
+		UINT8	DATA_CHECK_SUM;
 		UINT8	STATUS;
 		UINT8 	DATA_Pointer;
 	} xdata Mesh_Data_RxD,Mesh_Data_TxD;
 	#define MESH_Data_RxD_STANDBY	0
-	#define MESH_Data_RxD_TO_be_Processed	1
-	#define MESH_Data_RxD_BUSY	2
+	#define MESH_Data_RxD_FRAME_HEAD_READING	1
+	#define MESH_Data_RxD_FRAME_HEAD_RECEIVED	2
+	#define MESH_Data_RxD_DATA_LEN_RECEIVED		3
+	#define MESH_Data_RxD_DATA_READING			4
+	#define MESH_Data_RxD_DATA_RECEIVED			5
+	#define MESH_Data_RxD_DATA_SUM_RECEIVED		6
+	#define MESH_Data_RxD_FRAME_COMPLETE		7
+	#define MESH_Data_RxD_BUSY					8
+	#define MESH_Data_RxD_LEN_ERROR				100
+	#define MESH_Data_RxD_SUM_ERROR				101
+	#define MESH_Data_RxD_TO_be_Processed		201
 	
-	#define	MESH_Data_Pointer_Header	0
-	#define	MESH_Data_Pointer_Address	1
-	#define	MESH_Data_Pointer_Length	2
-	#define	MESH_Data_Pointer_FB	3
-	#define	MESH_Data_Pointer_DB8	4
-	#define	MESH_Data_Pointer_DB7	5
-	#define	MESH_Data_Pointer_DB6	6
-	#define	MESH_Data_Pointer_DB5	7
-	#define	MESH_Data_Pointer_DB4	8
-	#define	MESH_Data_Pointer_DB3	9
-	#define	MESH_Data_Pointer_DB2	10
-	#define	MESH_Data_Pointer_DB1	11
-	#define	MESH_Data_Pointer_DB0	12
+
+//BT_UART Query instruction set
+	#define Query_Firmware_Version	0x01
+
+
+//BT_UART Command instruction set
+	//#define Query_Firmware_Version	0x81
 
 	#define Instruction_Send	0xAAFB
 	#define Address_Broadcast	0xFFFF
@@ -197,7 +217,7 @@ void system_read_data(void);
 	volatile UINT8 TxBuffer_read_counter = 0x00;
 	volatile UINT8 TxBuffer_write_counter = 0x00;
 
-void v_UART_BT_Answer_processing();
+void v_BT_MESH_UART_Answer_processing();
 
 //ADC
 //Load-Lamp voltage sensing: 100K + 4.7K
@@ -389,7 +409,7 @@ char asciitohex(char ascii_byte);
 char hextoascii(char hex_byte);
 
 void v_init();
-void v_BT_Init();
+
 void v_Load_Mesh_Send_Data(UINT16 Instruction,UINT16 Address,UINT8 Data[]);
 
 //every 1 ms
@@ -653,232 +673,7 @@ void v_init()
 	Var_Init();
 }
 
-#ifdef BT_MESH_FEATURE_IN
-void v_BT_Init()
-{
-	UINT8 U8_i_temp = 0;
-	BT_RESET_PIN = 1;
-	
-		
-		
 
-/* 		//Querry Version number
-		//Response:JDY-10M-Y2.3-MESH
-		printf("AT+VER\r\n");
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(100);
-
-		//Querry MAC address
-		//Response:+MAC:<mac address>
-		printf("AT+MAC\r\n");
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);	 */
-		
-/* 		while(U8_UART_Receive_Pakage_Status != UART_RECEIVE_PACKAGE_COMPLETE)
-		{
-			U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_PAUSE;
-			v_UART_BT_Answer_processing();
-		}
-		printf("%s",UART_BUFFER);
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(10); */
-
- 		//SET soft reset
-		//Response:+OK
-		PWRC_AT_INSTRUCTION_MODE;
- 			printf("AT+RESET\r\n");	
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);	
-		Timer0_Delay1ms(2);	
-		PWRC_TRANS_MODE;
-		v_UART_BT_Answer_processing();		
-
-
- 		//SET BT name
-		//Response:+OK
-		PWRC_AT_INSTRUCTION_MODE;
- 			printf("AT+NAMEKTC-BT-MESH-1\r\n");	
-		//TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);	
-		Timer0_Delay1ms(2);	
-		PWRC_TRANS_MODE;
-		v_UART_BT_Answer_processing();
-
-		
-
-/*		//Querry BT name
-		//Response:+NAME=<BT name>
- 			printf("AT+NAME\r\n");
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);	
-		Timer0_Delay1ms(2);		 */ 	
-		
-		//Querry BAUD rate
-		//Response:+BAUD=<0--115200>
-		//printf("AT+BAUD\r\n");	
-
-		//Set device type
-		//Response:+ok
-		/*
-				A0:Transparent transmission mode
-				B1:LED light mode
-				C0:Low power consumption telecontroller			
-		*/
-		//printf("AT+CLSSA0\r\n");
-			
-
-
-
-		//Querry device type
-		//Response:+CLSS=<A0--Transparent transmission mode>
-		PWRC_AT_INSTRUCTION_MODE;
-		printf("AT+CLSS\r\n");
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(2000);
-		PWRC_TRANS_MODE;
-		v_UART_BT_Answer_processing();
-
-		
-		//SET mesh network ID 
-		//(ID has to be exactly 12 characters, if not enough, fill in with space)
-		//(ID has to be data within 0-9,A,B,C,D,E,F)
-		//Response:+OK
-		PWRC_AT_INSTRUCTION_MODE;
-		printf("AT+NETID0123456BCDEF\r\n");	
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);	
-		Timer0_Delay1ms(2);	
-		PWRC_TRANS_MODE;
-		v_UART_BT_Answer_processing();
-		
-	
-
-		//Querry mesh network ID
-		//Response:+NETID=<netID>
-		//printf("AT+NETID\r\n");		
-		//TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		//Timer0_Delay1ms(200);	
-		//Timer0_Delay1ms(2);			
-
-		//SET mesh network short address
-		//(short address has to be exactly 2 characters, if not enough, fill in with space)
-		//(short address has to be data within 0-9,A,B,C,D,E,F)
-		//Response:+OK
-		//printf("AT+MADDR55\r\n");	
-		//TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		//Timer0_Delay1ms(200);	
-		//Timer0_Delay1ms(2);				
-		
-
-		//Querry mesh network short address
-		//Response:+MADDR=<short address>
-		PWRC_AT_INSTRUCTION_MODE;
-		U8_i_temp = 0;		
- 		while((U8_UART_Receive_Pakage_Status != UART_RECEIVE_PACKAGE_COMPLETE) && (U8_i_temp < UART_MAX_TRY_TIMEOUT))	//try max UART_MAX_TRY_TIMEOUT times
-		{
-			printf("AT+MADDR\r\n");	
-			TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-			Timer0_Delay1ms(100);				
-			v_UART_BT_Answer_processing();
-			
-			U8_i_temp++;			
-		}		
-		if(U8_i_temp >= UART_MAX_TRY_TIMEOUT)
-		{
-			printf("Gets BT Mesh short address fail\r\n");	
-			TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-			Timer0_Delay1ms(20);
-		}
-		else
-		{	
-			U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_PAUSE;
-			printf("%s",UART_BUFFER);
-			TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-			Timer0_Delay1ms(10); 
-			//U8_BT_Short_Address = (((*(UART_BUFFER +7))-0x30) << 4) + ((*(UART_BUFFER +8))-0x30);
-			U8_BT_Short_Address = asciitohex(*(UART_BUFFER +7));
-			U8_BT_Short_Address = (U8_BT_Short_Address << 4);
-			U8_BT_Short_Address = asciitohex(*(UART_BUFFER +8)) + U8_BT_Short_Address;
-		}
-		PWRC_TRANS_MODE;
-		
-		
-		//SET APP connection passcode
-		//(APP connection passcode has to be exactly 4 characters, if not enough, fill in with space)
-		//(APP connection passcode can be any asCII code)
-		//Response:+OK
-/* 			printf("AT+PSS8HAB\r\n");					
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);	
-		Timer0_Delay1ms(2);		 */	
-
-		//Querry APP connection passcode
-		//Response:+PSS=<passcode>
-/* 			printf("AT+PSS\r\n");
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);	
-		Timer0_Delay1ms(2); */				
-
-		//SET APP passcode connection switch
-		//ISCEN0 -- APP dosn't require a passcode
-		//ISCEN1 -- open APP passcode switch
-		//Response:+OK
-/* 			printf("AT+ISCEN0\r\n");	
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);	
-		Timer0_Delay1ms(2);				
-		 */
-	
-
-		//Querry APP passcode connection switch
-		//Response:+ISCEN=<ISCEN>
-		//						0 -- APP dosn't require a passcode
-		//						1 -- open APP passcode switch
-/* 			printf("AT+ISCEN\r\n");	
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);			
-		Timer0_Delay1ms(2);	 */
-		
-		//Broadcast send data
-/* 			putchar(0xAA);
-		putchar(0xFB);
-		putchar(0xFF);
-		putchar(0xFF);
-		printf("123456789A"); */
-		//strcpy(Data_Test,"IAMNOTFINEOK");			
-		//v_Load_Mesh_Send_Data(Instruction_Send,Address_Broadcast,Data_Test);
-		
-		//*Data_Test1 = "IAMNOTFINEOK";
-		//v_Load_Mesh_Send_Data(Instruction_Send,Address_Broadcast,Data_Test1);
-
-		
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		Timer0_Delay1ms(200);			
-		Timer0_Delay1ms(2); 
-		
-		//printf(0x55);
-		
-		TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-		//P12 = ~P12;		//In debug mode check UART_BUFFER[u16_CNT] to check receive data
-		
-		Timer0_Delay1ms(200);		
-		Timer0_Delay1ms(2);		
-}
-#endif
-
-#ifdef BT_MESH_FEATURE_IN
-UINT8 U8_BT_Connect_Status(void)
-{
-	if(BT_STAT_PIN)
-	{
-		return ON;
-	}
-	else
-	{
-		return OFF;
-	}
-}
-#endif
 
 static void Var_Init(void)
 {
@@ -1010,35 +805,17 @@ void main (void)
 	
 	
 	v_init();
-	
+
+#ifdef DEBUG_PRINTF_LOG_EN	
 	//software version info
-	printf(SOFTWARE_INFO,"\r\n");
+	//printf(SOFTWARE_INFO,"\r\n");
+	//printf("software version = ",Firmware_INFO,"\r\n");
 	TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
 	Timer0_Delay1ms(10);	
-
-/* 	p_temp = UART_BUFFER;
-	*UART_BUFFER++ = 'A';	//"What is that??";
-	*UART_BUFFER++ = 'B';	
-	*UART_BUFFER++ = 'C';	
-	*UART_BUFFER++ = 'D';	
-	//strcpy(UART_BUFFER,"what is that?");
-	printf("%s\n",UART_BUFFER);
-	printf(SOFTWARE_INFO,"\r\n");
-	printf("%s\n",p_temp); */
-	
-/* 	*p_temp = UART_BUFFER;
-	*p_temp = "A";
-	*p_temp++ = "B";
-	*p_temp++ = "C";
-	printf("%s\n",UART_BUFFER); */
-
-#ifdef BT_MESH_FEATURE_IN	
-	v_BT_Init();
 #endif
-/* 	CHARGE_ENABLE = OFF;
-	CHARGE_ENABLE = ON;
-	CHARGE_ENABLE = OFF;
-	CHARGE_ENABLE = ON; */
+
+
+
 
 	LAMP_CTL = OFF;	//Turn Off Q6
 	LAMP_EN = OFF;		//Disable LAMP */	
@@ -1049,21 +826,30 @@ void main (void)
 			{
 				//P12 = ~P12;		//In debug mode check UART_BUFFER[u16_CNT] to check receive data
 				riflag = 0;
-				//v_UART_BT_Answer_processing();
 				
-				if(U8_UART_RxD_Handle() == UART_HANDLE_STATUS_TIME_OUT)
+				
+				if(U8_BT_MESH_UART_RxD_Handle() == UART_HANDLE_STATUS_TIME_OUT)
 				{
-					printf("UART RxD timeout \r\n");
+					#ifdef DEBUG_PRINTF_LOG_EN
+						printf("UART RxD timeout \r\n");
+					#endif
 				}
 				
+				if(Mesh_Data_RxD.STATUS == MESH_Data_RxD_TO_be_Processed)
+				{
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
+					v_BT_MESH_UART_Answer_processing();
+				}	
 			}
 			
 			if(U8_UART_Receive_Pakage_Status == UART_RECEIVE_PACKAGE_COMPLETE)
 			{
 				U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_PAUSE;
-				printf("%s\n",UART_BUFFER);
-				TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-				Timer0_Delay1ms(10);
+				#ifdef DEBUG_PRINTF_LOG_EN
+					printf("%s\n",UART_BUFFER);
+					TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
+					Timer0_Delay1ms(10);
+				#endif
 			}
 			
 			//Timming processing,every 500ms system tick
@@ -1087,44 +873,17 @@ void main (void)
 					//printf("500ms_counter = %c\r\n", hextoascii(uc_500ms_counter));
 				}
 				
-				
-				printf("System state=0x%c\r\n", hextoascii(uc_System_State));
-				//printf("Bat vol @MCU = %d\r\n",Battery_Value_mV);
-				printf("VCC @MCU = %d\r\n",ADC_to_AIN_mV(0xFFF));
-#ifdef BT_MESH_FEATURE_IN				
-/* 				if(U8_BT_Connect_Status() == ON)
-				{
-					PWRC_TRANS_MODE;
-					printf("I am connected\r\n");
-					TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-					Timer0_Delay1ms(10);
-				} */
-				
+				#ifdef DEBUG_PRINTF_LOG_EN
+					printf("System state=0x%c\r\n", hextoascii(uc_System_State));
+					printf("VCC @MCU = %d\r\n",ADC_to_AIN_mV(0xFFF));
+				#endif
+#ifdef BT_MESH_FEATURE_IN								
 				//if both auto-test & manual test button is pressed
 				if((KEY_AUTO_TEST_STATUS == ON) && (KEY_MANUAL_TEST_STATUS == ON))
 				{
-					//SET BT name
-					//Response:+OK
-					PWRC_AT_INSTRUCTION_MODE;
-					printf("AT+NAMEI am in Group-%x",U8_SW_3_BITS_SENSE(),"\r\n");	
-					TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-					Timer0_Delay1ms(100);	 		
+					//function to be defined...
 
-					//Querry BT name
-					//Response:+NAME=<BT name>
-						printf("AT+NAME\r\n");
-					TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-					Timer0_Delay1ms(100);	
 
-					while(U8_UART_Receive_Pakage_Status != UART_RECEIVE_PACKAGE_COMPLETE)
-					{
-						v_UART_BT_Answer_processing();
-						U8_UART_Receive_Pakage_Status = UART_RECEIVE_PACKAGE_PAUSE;
-						
-					}
-					printf("%s",UART_BUFFER);
-					TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-					Timer0_Delay1ms(10); 
 				}
 #endif				
 			}		
@@ -1164,16 +923,6 @@ void main (void)
 				v_KEY_AUTO_MANUAL_SENSE();
 				i_temp = U8_SW_3_BITS_SENSE();
 
-/*  				printf("\n Bandgap=0x%x",Bandgap_Value);
-				printf("\n Battery=0x%x",Battery_Value);
-				printf("\n Load=0x%x",Load_Value);
-				printf("\n 3bits sw=0x%x",SW_3_bits_Value);
-				printf("\n KEY_Auto_Manual=0x%x",KEY_Auto_Manual_Value);
-				printf("\n KEY_Auto=%c",hextoascii(KEY_AUTO_TEST_STATUS));
-				printf("\n KEY_Manual=%c",hextoascii(KEY_MANUAL_TEST_STATUS));
-				printf("\n SW_S1=%c",hextoascii(SW_S1_STATUS));
-				printf("\n SW_S2=%c",hextoascii(SW_S2_STATUS));
-				printf("\n SW_S3=%c",hextoascii(SW_S3_STATUS));  */
 	
 			}
 			
@@ -1183,32 +932,14 @@ void main (void)
 			{
 				U8_UART_TxD_Handle_ticks_ms = 0;	//reset
 				
-				//printf("\r\n I am alive");
+
 				
 				if(U8_UART_TxD_Handle() == UART_HANDLE_STATUS_TIME_OUT)
 				{
 					TI = 1;
 				}
 			}
-			
-
-
-			//strcpy(Data_Test,"IAMNOTFINEOK");			
-			//v_Load_Mesh_Send_Data(Instruction_Send,Address_Broadcast,Data_Test);
-
-			
-			//TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-			//Timer0_Delay1ms(200);			
-			//Timer0_Delay1ms(2); 
-			
-			
-			//putchar(0x55);
-			
-			//TI = 1;	//Triggering UART buffer sending process ... for putchar() & Printf()
-			//P12 = ~P12;		//In debug mode check UART_BUFFER[u16_CNT] to check receive data
-			
-			//Timer0_Delay1ms(20);		
-			//Timer0_Delay1ms(2);		
+				
 		}
 	
 }
@@ -2507,10 +2238,11 @@ static void Battery_Test_Proc(void)
 		if((Battery_Value_mV_bkup > Battery_Value_mV) && ((Battery_Value_mV_bkup - Battery_Value_mV) >= BATTERY_NC_mV))
 		{
 			uc_Battery_Fault_Flag = 1;			
-			//printf("Battery disconnected\r\n");
-		}		
-		printf("Bat vol bkup @MCU = %d\r\n",Battery_Value_mV_bkup);
-		printf("Bat vol @MCU = %d\r\n",Battery_Value_mV);
+		}	
+		#ifdef DEBUG_PRINTF_LOG_EN
+			printf("Bat vol bkup @MCU = %d\r\n",Battery_Value_mV_bkup);
+			printf("Bat vol @MCU = %d\r\n",Battery_Value_mV);
+		#endif
 	}
 	//do battery voltag too low check	
 	else if (U8_Battery_Discharge_ticks_ms >= (Battery_NC_Check_Discharge_Ticks_ms + 2))
@@ -3166,99 +2898,99 @@ UINT8 U8_UART_TxD_Handle(void)
 	//return UART_BUS_STATUS_STANDBY;
 }
 
-UINT8 U8_UART_RxD_Handle(void)
+UINT8 U8_BT_MESH_UART_RxD_Handle(void)
 {
 	while(RxBuffer_read_counter != RxBuffer_write_counter)
 	{	
 		switch (Mesh_Data_RxD.STATUS)
 		{
 			case MESH_Data_RxD_STANDBY:
-				if(RxBuffer[RxBuffer_read_counter] == 0xAA)
+				if(RxBuffer[RxBuffer_read_counter] == BT_UART_FRAME_HEAD1)
 				{
-					Mesh_Data_RxD.DATA_Package_Header = 0xAA;
-					Mesh_Data_RxD.STATUS = MESH_Data_RxD_BUSY;
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Address;
+					Mesh_Data_RxD.DATA_Package_Header1 = BT_UART_FRAME_HEAD1;
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_FRAME_HEAD_READING;
+				}
+			break;
+
+			case MESH_Data_RxD_FRAME_HEAD_READING:
+				if(RxBuffer[RxBuffer_read_counter] == BT_UART_FRAME_HEAD2)
+				{
+					Mesh_Data_RxD.DATA_Package_Header2 = BT_UART_FRAME_HEAD2;
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_FRAME_HEAD_RECEIVED;
 				}
 			break;
 			
-			case MESH_Data_RxD_BUSY:
+			case MESH_Data_RxD_FRAME_HEAD_RECEIVED:
+				{
+					Mesh_Data_RxD.DATA_Length = RxBuffer[RxBuffer_read_counter];
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_DATA_LEN_RECEIVED;
+					Mesh_Data_RxD.DATA_Pointer = 0;
+					
+					//data length check
+					if((Mesh_Data_RxD.DATA_Length > MESH_DATA_MAX_LEN)	//length out of limit
+						|| (Mesh_Data_RxD.DATA_Length < 1))	//length out of limit
+					{
+						Mesh_Data_RxD.STATUS = MESH_Data_RxD_LEN_ERROR;
+						//to be defined
+					}
+				}
+			break;			
+			
+			case MESH_Data_RxD_DATA_LEN_RECEIVED:
 			{
-				if(Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_Address)
+				Mesh_Data_RxD.DATA[Mesh_Data_RxD.DATA_Pointer] = RxBuffer[RxBuffer_read_counter];
+				Mesh_Data_RxD.DATA_Pointer ++;
+				if (Mesh_Data_RxD.DATA_Pointer == Mesh_Data_RxD.DATA_Length)	//data complete
 				{
-					Mesh_Data_RxD.Target_Short_Address = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Length;
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_DATA_RECEIVED;
 				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_Length)
+			}
+			break;
+
+			case MESH_Data_RxD_DATA_RECEIVED:
+			{
+				UINT8	U8_temp_Checksum,U8_temp_Checksum_i;
+				Mesh_Data_RxD.DATA_CHECK_SUM = RxBuffer[RxBuffer_read_counter];
+				
+				//check if checksum correct
+				U8_temp_Checksum = 0;
+				U8_temp_Checksum_i = 0;
+				while(U8_temp_Checksum_i < Mesh_Data_RxD.DATA_Length)
 				{
-					if(RxBuffer[RxBuffer_read_counter] == 0x0A)	//10 bytes,fixed length
-					{
-						Mesh_Data_RxD.DATA_Length = RxBuffer[RxBuffer_read_counter];
-						Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_FB;						
-					}
-					else	//invalid package
-					{
-						Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
-						Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Header;						
-					}
+					U8_temp_Checksum = (UINT8)(U8_temp_Checksum + Mesh_Data_RxD.DATA[U8_temp_Checksum_i]);
+					U8_temp_Checksum_i++;
 				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_FB)
+				U8_temp_Checksum = U8_temp_Checksum + Mesh_Data_RxD.DATA_Length;
+				if(Mesh_Data_RxD.DATA_CHECK_SUM == U8_temp_Checksum)
 				{
-					Mesh_Data_RxD.Function_Byte = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB8;							
+					Mesh_Data_RxD.Function_Byte = Mesh_Data_RxD.DATA[0];
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_TO_be_Processed;	//complete frame received without problem
 				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB8)
+				else
 				{
-					Mesh_Data_RxD.DATA[8] = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB7;							
-				}	
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB7)
-				{
-					Mesh_Data_RxD.DATA[7] = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB6;							
-				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB6)
-				{
-					Mesh_Data_RxD.DATA[6] = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB5;							
-				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB5)
-				{
-					Mesh_Data_RxD.DATA[5] = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB4;							
-				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB4)
-				{
-					Mesh_Data_RxD.DATA[4] = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB3;							
-				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB3)
-				{
-					Mesh_Data_RxD.DATA[3] = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB2;							
-				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB2)
-				{
-					Mesh_Data_RxD.DATA[2] = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB1;							
-				}				
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB1)
-				{
-					Mesh_Data_RxD.DATA[1] = RxBuffer[RxBuffer_read_counter];
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_DB0;							
-				}
-				else if (Mesh_Data_RxD.DATA_Pointer == MESH_Data_Pointer_DB0)
-				{
-					Mesh_Data_RxD.DATA[0] = RxBuffer[RxBuffer_read_counter];	
-					Mesh_Data_RxD.STATUS = MESH_Data_RxD_TO_be_Processed;
-					Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Header;				
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_SUM_ERROR;	//checksum error
 				}
 			}
 			break;
 			
-			case MESH_Data_RxD_TO_be_Processed:
-					//Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
-					//Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Header;				
+			case MESH_Data_RxD_FRAME_COMPLETE:
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_TO_be_Processed;
+				
 			break;
+			
+ 			case MESH_Data_RxD_TO_be_Processed:
+					//Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
+				
+			break;
+			
+			case MESH_Data_RxD_SUM_ERROR:
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
+			
+			break;
+			case MESH_Data_RxD_LEN_ERROR:
+					Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
+				
+			break;			
 		}
 
 		//read pointer update
@@ -3275,51 +3007,9 @@ UINT8 U8_UART_RxD_Handle(void)
 		//process received data package
 		if(Mesh_Data_RxD.STATUS == MESH_Data_RxD_TO_be_Processed)
 		{
-#ifdef BT_MESH_FEATURE_IN			
-			PWRC_TRANS_MODE;
-			Timer0_Delay1ms(1000);
+
 			
-			printf("An valid data package received  \r\n");
-			Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
-			Mesh_Data_RxD.DATA_Pointer = MESH_Data_Pointer_Header;		
-			
-			
-		//Querry device type
-		//Response:+CLSS=<A0--Transparent transmission mode>
-			PWRC_AT_INSTRUCTION_MODE;
-			printf("AT+CLSS\r\n");			
-			TI = 1;
-			Timer0_Delay1ms(200);
-			PWRC_TRANS_MODE;
-			
-			
-			//Querry short address received
-			PWRC_AT_INSTRUCTION_MODE;
-			putchar(0xAA);
-			putchar(0xFB);
-			putchar(0xFF);
-			putchar(0xFF);	
-			printf("1");
-			printf("2");			
-			printf("3");
-			printf("4");
-			printf("5");
-			printf("6");
-			printf("7");
-			printf("8");
-			printf("9");
-			printf("0");			
-			TI = 1;
-			Timer0_Delay1ms(200);
-			
-		//Querry device type
-		//Response:+CLSS=<A0--Transparent transmission mode>
-			PWRC_AT_INSTRUCTION_MODE;
-			printf("AT+CLSS\r\n");			
-			TI = 1;
-			Timer0_Delay1ms(200);		
-			PWRC_TRANS_MODE;
-#endif			
+			//function to be defined...	
 		}
 		
 	}	
@@ -3346,9 +3036,45 @@ UINT8 U8_UART_RxD_Handle(void)
 	return 0;
 }
 
-void v_UART_BT_Answer_processing()
+void v_BT_MESH_UART_Answer_processing()
 {
-	//
+	UINT8 U8_temp_UART_TxD_i;
+	UINT8 U8_temp_UART_TxD_Checksum;
+	
+	switch(Mesh_Data_RxD.Function_Byte)
+	{
+		case Query_Firmware_Version:
+			{
+				Mesh_Data_TxD.DATA_Length = 0x03;
+				Mesh_Data_TxD.DATA[0] = Firmware_INFO_1;
+				Mesh_Data_TxD.DATA[1] = Firmware_INFO_2;
+				Mesh_Data_TxD.DATA[2] = Firmware_INFO_3;
+			}
+		break;
+	}
+	
+	
+
+	
+	
+	Mesh_Data_RxD.STATUS = MESH_Data_RxD_STANDBY;
+
+	putchar(BT_UART_FRAME_HEAD1);
+	putchar(BT_UART_FRAME_HEAD2);
+	putchar(Mesh_Data_TxD.DATA_Length);
+	
+	U8_temp_UART_TxD_i = 0;
+	U8_temp_UART_TxD_Checksum = 0;
+	while(U8_temp_UART_TxD_i < Mesh_Data_TxD.DATA_Length)
+	{
+		putchar(Mesh_Data_TxD.DATA[U8_temp_UART_TxD_i]);
+		U8_temp_UART_TxD_Checksum = (UINT8)(U8_temp_UART_TxD_Checksum + Mesh_Data_TxD.DATA[U8_temp_UART_TxD_i]);
+		U8_temp_UART_TxD_i++;
+	}
+	U8_temp_UART_TxD_Checksum = (UINT8)(U8_temp_UART_TxD_Checksum + Mesh_Data_TxD.DATA_Length);
+	putchar(U8_temp_UART_TxD_Checksum);	
+	
+/* 	//
 	while(RxBuffer_read_counter != RxBuffer_write_counter)
 	{		
 		//new data package received,start from "+"
@@ -3382,5 +3108,5 @@ void v_UART_BT_Answer_processing()
 		{
 			RxBuffer_read_counter++;
 		}		
-	}
+	} */
 }
